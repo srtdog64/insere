@@ -239,6 +239,10 @@ The framework layer adds first-class host concerns:
 - `InsereMailbox` receives inbound host events.
 - `waitEvent(mailbox, match)` suspends an effect until a matching event arrives.
 - Cancelling the task removes its mailbox waiter.
+- `mailbox.emit(event)` broadcasts to every matching waiter.
+- `mailbox.emitOne(event)` consumes only the first matching waiter.
+- `InsereEventBus` supports keyed inbound events through `emitTo`,
+  `waitBusEvent`, `subscribeTo`, and listener-only `publishTo`.
 - `InsereHostAdapter` combines one `InsereApi`, one mailbox, and one host
   clock.
 - Supervision is explicit and separate from task application policy.

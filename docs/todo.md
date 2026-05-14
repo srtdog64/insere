@@ -3,9 +3,9 @@
 This document tracks design work that should stay in Insere, not in a single
 host application such as Geukbit.
 
-Insere's product boundary is a small cooperative scheduler. Avoid pulling it
-toward a full task runtime, worker pool, dependency container, or general job
-queue.
+Insere's product boundary is a small host-cooperative task runtime. Avoid
+pulling it toward a standalone executor, worker pool, dependency container, or
+general job queue.
 
 ## Current Fit For Geukbit
 
@@ -34,8 +34,9 @@ Geukbit can start with an adapter around Insere for:
 - autosave/build/export tasks
 - editor command effect orchestration
 
-Entity lifecycle and script event bus should wait until the items below are
-designed.
+Entity lifecycle and script runtime composition should stay at recipe level
+until repeated host integrations prove that a first-class API is needed. The
+generic keyed event bus is already implemented in the framework layer.
 
 ## Completed Core Design Items
 
@@ -54,6 +55,8 @@ These items are now designed and implemented in the core API:
 - Frame/time helpers: `waitFrames`, `sleepUntil`, `currentFrame`,
   `currentTime`, and `currentKey`.
 - Packaging: `docs` and `benchmark` are included in package files.
+- Release gates: `npm run check` validates build, tests, export smoke, and
+  package dry-run; `npm run check:release` also runs the Geukbit scale gate.
 - Direct core: `DirectInsereTask` / `InsereCore` with `spawn`, `restart`,
   `waitFrame`, `cancel`, `cancelGroup`, `cancelAll`, `tick`, `runIdle`, lazy
   `AbortSignal`, cancellation finalizers, `delta`, and snapshots.
@@ -79,27 +82,29 @@ These items are now designed and implemented in the core API:
 
 `docs/performance.md` records the current microbenchmark results.
 
-Current local result, measured on 2026-05-14 with Node `v22.17.0` and
+Current local result, measured on 2026-05-15 with Node `v22.17.0` and
 `INSERE_BENCH_REPEATS=11`:
 
-- Direct restart storm is about 149.73x faster than a Promise+Map+Abort
+- Direct restart storm is about 171.14x faster than a Promise+Map+Abort
   latest-only implementation.
-- Direct frame continuation for 10k already-waiting tasks is about 3.1x faster
+- Direct frame continuation for 10k already-waiting tasks is about 3.38x faster
   than `async`/`await Promise.resolve` continuation flushing.
-- Direct `cancelGroup("asset:")` for 10k keyed tasks is about 444.58x faster
-  than Map+AbortController cancellation and completed in 0.17ms.
+- Direct `cancelGroup("asset:")` for 10k keyed tasks is about 412.53x faster
+  than Map+AbortController cancellation and completed in 0.18ms.
 - Direct mixed `cancelGroup("asset:")` with `preview:` tasks also present is
-  about 65.48x faster and completed in 0.56ms through the group index.
-- Generator `Insere` frame routine is about 1.23x faster than the Promise frame
+  about 71.2x faster and completed in 0.51ms through the group index.
+- Generator `Insere` frame routine is about 1.35x faster than the Promise frame
   continuation baseline in the reference benchmark.
-- Direct value branching is about 1.37x faster than `InsereResult ok/match`.
+- Direct value branching is about 1.39x faster than `InsereResult ok/match`.
 - `InsereMailbox` fanout is near parity with a simple EventTarget once-listener
   Promise baseline and may win or lose depending on run variance. Mailbox is
   for typed matching, buffering policy, and cancellation cleanup.
+- `InsereMailbox.emitOne` is about 1.07x slower than a raw Promise resolver
+  queue and provides explicit consume-one semantics for queue-like handoff.
 - Geukbit scale benchmark shows lifecycle cancel and projection restart are
-  strong fits, hot script event publish is near parity with raw Map callbacks,
-  Promise-style script waits are slightly slower, and per-entity gameplay task
-  scheduling is not a good fit.
+  strong fits, hot script event publish is close to raw Map callbacks,
+  Promise-style keyed waits are slower, and per-entity gameplay task scheduling
+  is not a good fit.
 
 Design conclusion:
 
@@ -114,14 +119,19 @@ Design conclusion:
 - Any mailbox, supervision, or entity lifecycle layer must include a benchmark
   before being promoted into core.
 
-## P0: Host Adapter Guidance
+## Completed: Host Adapter Guidance
 
-- Document the recommended host adapter shape:
+The recommended host adapter shape is documented in `docs/api.md` and
+`docs/framework.md`. Hosts should keep renderer, editor, and game-engine
+ownership outside Insere while using the facade for one key space, one host
+clock, explicit task policy, and supervision.
+
+Reference shape:
 
 ```ts
 interface TaskRuntimePort {
-  tick(now: number): void;
-  runIdle(): void;
+  tick(now: number): InsereResult<void>;
+  runIdle(): InsereResult<void>;
   waitFrame(key: string, step: DirectInsereStep): void;
   applyDirect(
     key: string,
@@ -148,15 +158,17 @@ interface TaskRuntimePort {
 }
 ```
 
-- Document how a host should compute `dt` outside Insere from `now`.
-- Document how host applications should convert uncaught task failures into
-  their own Result systems. API-boundary bug logging is now documented in
-  `docs/logging.md`, but supervision policy is still separate.
-- Document how host applications should choose task policy:
+- Hosts compute `dt` outside Insere from their own clock and pass `now` to
+  `tick(now)`; Insere exposes the resulting `delta`.
+- Host applications convert uncaught task failures through explicit supervision
+  policy or their own Result layer. API-boundary bug logging is documented in
+  `docs/logging.md`.
+- Host applications choose task policy explicitly:
   - `restart` for superseded work such as projection rebuilds
   - `spawn` for unique sessions where duplicate keys indicate a bug
   - `skip` for autosave/build/import tasks that should not overlap
-- Keep Insere free of renderer, editor, game-engine, and framework ownership.
+- Insere remains free of renderer, editor, game-engine, and framework
+  ownership.
 
 ## Completed: Inbound Event Mailbox
 
@@ -186,11 +198,11 @@ mailbox.emit(event);
 yield* waitEvent(mailbox, (event) => event.type === "pointerup")(ctx);
 ```
 
-Remaining open questions:
+Closed decisions:
 
-- Whether high-volume input streams need mailbox-specific benchmarks.
-- Whether mailbox fanout should remain broadcast-to-all-waiters or offer a
-  consume-one mode.
+- High-volume fanout and consume-one paths are covered by `npm run benchmark`.
+- Mailbox exposes both semantics explicitly: `emit()` broadcasts to all
+  matching waiters, while `emitOne()` consumes only the first matching waiter.
 
 ## Completed: Failure Supervision Policy
 

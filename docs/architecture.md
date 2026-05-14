@@ -1,9 +1,9 @@
 # Insere Architecture
 
-Insere is a small cooperative scheduler for TypeScript applications that need
-public control flow.
+Insere is a small host-cooperative task runtime for TypeScript applications
+that need public control flow.
 
-It is not a full task runtime. It does not execute work independently, own
+It is not a standalone executor. It does not execute work independently, own
 threads, run worker pools, or hide background scheduling. The host owns the
 clock and execution environment; Insere only coordinates keyed work that
 cooperatively yields through frame, delay, idle, or Promise-bridge waits.
@@ -50,10 +50,12 @@ task declarations -> effects -> routines -> runtime -> instructions
 - Direct task specs and `DirectInsereTaskScope` apply the same
   `spawn`/`restart`/`skip` policy model to direct callbacks.
 - `host` provides `InsereHostAdapter`, a large-host facade that combines the
-  API facade, an inbound mailbox, host-clock helpers, supervision policy, and
-  structured logging.
+  API facade, an inbound mailbox, keyed event bus, host-clock helpers,
+  supervision policy, and structured logging.
 - `mailbox` provides `InsereMailbox` and `waitEvent` for cancellable inbound
   event waits with explicit buffering.
+- `event-bus` provides `InsereEventBus` and `waitBusEvent` for targeted keyed
+  inbound events, cancellable keyed waits, and listener-only `publish` calls.
 - `supervision` defines `InsereFailure` and the post-failure policies:
   `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`, and bounded
   `restart`.
@@ -86,7 +88,7 @@ composition and typed effect helpers matter more than raw scheduling cost.
 
 ## Non-Goals
 
-- no full task runtime identity
+- no standalone executor identity
 - no Promise replacement
 - no worker pool
 - no preemptive threading

@@ -4,8 +4,8 @@ The framework layer sits above the direct core and generator/effect runtime.
 It is the recommended shape for large hosts such as editors, renderers, and
 game tools.
 
-This layer still exposes a cooperative scheduler, not a standalone task
-runtime. Host applications own rendering, I/O, threads, lifecycle, and the
+This layer still exposes a host-cooperative task runtime, not a standalone
+executor. Host applications own rendering, I/O, threads, lifecycle, and the
 clock. Insere provides keyed scheduling, cancellation, event ingress,
 supervision, and logging around that host loop.
 
@@ -75,6 +75,23 @@ Overflow policies:
 Waiting effects are cancellable through the task `AbortSignal`. Cancelling the
 task removes the mailbox waiter.
 
+`emit()` broadcasts an event to every matching waiter. Use it for broad host
+events that multiple routines may observe, such as pointer, animation, or
+collaboration events. `emitOne()` consumes only the first matching waiter and
+leaves the rest active. Use it for queue-like handoff where one routine should
+own the event:
+
+```ts
+mailbox.emitOne({ type: "job", id: "import:tree" });
+```
+
+The host adapter mirrors both mailbox paths:
+
+```ts
+host.emit({ type: "pointermove", x: 10 });
+host.emitOne({ type: "queuedImport", assetId: "tree" });
+```
+
 Use `InsereEventBus` when inbound events have a stable target key, such as
 `entity:{id}` or `script:{id}`. It indexes listeners and waiters by key and
 avoids scanning every predicate waiter for targeted script events:
@@ -114,6 +131,10 @@ until the next matching event.
 waiters, and applies buffering when nobody receives the event. `publishTo()` is
 the listener-only hot path: it delivers subscriptions and never touches
 waiters or buffers.
+
+Event-bus listeners are host callbacks. Listener exceptions are not swallowed:
+`emitTo()` and `publishTo()` let them bubble to the host. Put fallible work
+inside an Insere task when it should use supervision.
 
 ## Supervision
 

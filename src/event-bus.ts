@@ -346,36 +346,6 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
     this.#removeAbortListener(waiter);
   }
 
-  #emitListeners(key: TKey, event: TEvent): number {
-    const listeners = this.#listeners.get(key);
-
-    if (!listeners) {
-      return 0;
-    }
-
-    if (!isListenerSet(listeners)) {
-      if (typeof listeners === "function") {
-        listeners(event);
-      } else {
-        listeners.run(event);
-      }
-      return 1;
-    }
-
-    let delivered = 0;
-
-    for (const listener of listeners) {
-      if (typeof listener === "function") {
-        listener(event);
-      } else {
-        listener.run(event);
-      }
-      delivered += 1;
-    }
-
-    return delivered;
-  }
-
   #deleteListener(
     key: TKey,
     listener: InsereEventListener<TEvent> | Listener<TEvent>

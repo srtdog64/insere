@@ -70,6 +70,10 @@ export class InsereHostAdapter<
     return this.mailbox.emit(event);
   }
 
+  emitOne(event: TInboundEvent): number {
+    return this.mailbox.emitOne(event);
+  }
+
   waitEvent(
     match?: InsereEventMatcher<TInboundEvent>
   ): InsereEffect<unknown, unknown, TInboundEvent> {

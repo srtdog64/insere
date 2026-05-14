@@ -57,6 +57,24 @@ if ((await mailbox.wait()) !== "ready") {
   throw new Error("Mailbox did not return buffered event.");
 }
 
+const consumeOne = createInsereMailbox();
+const consumed = [];
+const first = consumeOne.wait().then((event) => consumed.push(`first:${event}`));
+const second = consumeOne.wait().then((event) => consumed.push(`second:${event}`));
+
+if (consumeOne.emitOne("single") !== 1) {
+  throw new Error("Mailbox emitOne did not consume one waiter.");
+}
+
+await first;
+
+if (consumed.join(",") !== "first:single" || consumeOne.waiters !== 1) {
+  throw new Error(`Mailbox emitOne consumed unexpected waiters: ${consumed}`);
+}
+
+consumeOne.emit("broadcast");
+await second;
+
 const eventBus = createInsereEventBus({ buffer: "latest" });
 eventBus.emit("key", "ready");
 
@@ -79,6 +97,25 @@ host.tick(1);
 
 if (hostEvents[0] !== "commit") {
   throw new Error("Host adapter mailbox did not dispatch.");
+}
+
+const hostConsume = createInsereHostAdapter({
+  dispatch: (event) => hostEvents.push(event)
+});
+hostConsume.api.applyEffect("first", function* (ctx) {
+  const event = yield* hostConsume.waitEvent()(ctx);
+  yield* dispatch(`first:${event}`)(ctx);
+});
+hostConsume.api.applyEffect("second", function* (ctx) {
+  const event = yield* hostConsume.waitEvent()(ctx);
+  yield* dispatch(`second:${event}`)(ctx);
+});
+hostConsume.emitOne("single");
+await Promise.resolve();
+hostConsume.tick(1);
+
+if (!hostEvents.includes("first:single") || hostConsume.mailbox.waiters !== 1) {
+  throw new Error("Host adapter emitOne did not consume exactly one waiter.");
 }
 
 let aborted = false;

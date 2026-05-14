@@ -29,6 +29,7 @@ export class InsereMailbox<TEvent = unknown> {
   readonly #overflow: InsereMailboxOverflowPolicy;
   readonly #events: TEvent[] = [];
   #waiters: Waiter<TEvent>[] = [];
+  #waiterHead = 0;
   #activeWaiters = 0;
   #removedWaiters = 0;
 
@@ -72,7 +73,7 @@ export class InsereMailbox<TEvent = unknown> {
     let delivered = 0;
     let kept = 0;
 
-    for (let i = 0; i < length; i += 1) {
+    for (let i = this.#waiterHead; i < length; i += 1) {
       const waiter = waiters[i]!;
 
       if (waiter.removed) {
@@ -88,17 +89,7 @@ export class InsereMailbox<TEvent = unknown> {
         continue;
       }
 
-      waiter.removed = true;
-      this.#activeWaiters -= 1;
-      this.#removedWaiters += 1;
-
-      const signal = waiter.signal;
-      const abort = waiter.abort;
-      if (signal !== undefined && abort !== undefined) {
-        signal.removeEventListener("abort", abort as EventListener);
-      }
-
-      waiter.resolve(event);
+      this.#resolveWaiter(waiter, event);
       delivered += 1;
     }
 
@@ -107,6 +98,7 @@ export class InsereMailbox<TEvent = unknown> {
     } else {
       waiters.length = kept;
     }
+    this.#waiterHead = 0;
     this.#removedWaiters = 0;
 
     if (delivered === 0) {
@@ -114,6 +106,43 @@ export class InsereMailbox<TEvent = unknown> {
     }
 
     return delivered;
+  }
+
+  emitOne(event: TEvent): number {
+    const waiters = this.#waiters;
+    const length = waiters.length;
+
+    if (length === 0) {
+      this.#bufferEvent(event);
+      return 0;
+    }
+
+    if (this.#activeWaiters === 0) {
+      this.#clearWaiters();
+      this.#bufferEvent(event);
+      return 0;
+    }
+
+    for (let index = this.#waiterHead; index < length; index += 1) {
+      const waiter = waiters[index]!;
+
+      if (waiter.removed) {
+        continue;
+      }
+
+      const match = waiter.match;
+      if (match !== undefined && !match(event)) {
+        continue;
+      }
+
+      this.#resolveWaiter(waiter, event);
+      this.#advanceWaiterHead(index);
+      this.#compactWaitersIfSparse();
+      return 1;
+    }
+
+    this.#bufferEvent(event);
+    return 0;
   }
 
   wait(
@@ -157,6 +186,7 @@ export class InsereMailbox<TEvent = unknown> {
           this.#activeWaiters -= 1;
           this.#removedWaiters += 1;
           waiter.reject(this.#abortError());
+          this.#advanceWaiterHead(this.#waiterHead);
           this.#compactWaitersIfSparse();
         };
         waiter.abort = abort;
@@ -204,6 +234,20 @@ export class InsereMailbox<TEvent = unknown> {
     }
   }
 
+  #resolveWaiter(waiter: Waiter<TEvent>, event: TEvent): void {
+    waiter.removed = true;
+    this.#activeWaiters -= 1;
+    this.#removedWaiters += 1;
+
+    const signal = waiter.signal;
+    const abort = waiter.abort;
+    if (signal !== undefined && abort !== undefined) {
+      signal.removeEventListener("abort", abort as EventListener);
+    }
+
+    waiter.resolve(event);
+  }
+
   #compactWaitersIfSparse(): void {
     if (this.#activeWaiters === 0) {
       this.#clearWaiters();
@@ -225,7 +269,7 @@ export class InsereMailbox<TEvent = unknown> {
     const waiters = this.#waiters;
     let kept = 0;
 
-    for (let index = 0; index < waiters.length; index += 1) {
+    for (let index = this.#waiterHead; index < waiters.length; index += 1) {
       const waiter = waiters[index]!;
 
       if (waiter.removed) {
@@ -239,12 +283,29 @@ export class InsereMailbox<TEvent = unknown> {
     }
 
     waiters.length = kept;
+    this.#waiterHead = 0;
     this.#removedWaiters = 0;
   }
 
   #clearWaiters(): void {
     this.#waiters.length = 0;
+    this.#waiterHead = 0;
     this.#removedWaiters = 0;
+  }
+
+  #advanceWaiterHead(index: number): void {
+    if (index !== this.#waiterHead) {
+      return;
+    }
+
+    const waiters = this.#waiters;
+    let next = index + 1;
+
+    while (next < waiters.length && waiters[next]!.removed) {
+      next += 1;
+    }
+
+    this.#waiterHead = next;
   }
 
   #abortError(): DOMException {

@@ -1,7 +1,7 @@
 {
   "name": "@exornea/insere",
   "version": "0.1.0",
-  "description": "Small cooperative scheduler for frame-aware TypeScript apps.",
+  "description": "Host-cooperative task runtime for frame-aware TypeScript apps.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -71,7 +71,8 @@
     "benchmark:geukbit": "npm run build && node benchmark/geukbit-scale.mjs",
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "check:publish": "npm run build && npm test && npm run smoke:exports",
+    "check:publish": "npm run build && npm test && npm run smoke:exports && npm run pack:check",
+    "check:release": "npm run check && npm run verify:geukbit",
     "pack:check": "npm pack --dry-run",
     "prepack": "npm run build",
     "prebuild": "rimraf dist",

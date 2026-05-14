@@ -368,6 +368,50 @@ async function mailboxFanout(prepared) {
   await Promise.all(prepared.promises);
 }
 
+function setupPromiseConsumeOne(iterations) {
+  const resolvers = [];
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(new Promise((resolve) => {
+      resolvers.push(resolve);
+    }).then((event) => {
+      sink += event.value;
+    }));
+  }
+
+  return { resolvers, promises };
+}
+
+async function promiseConsumeOne(prepared) {
+  for (let index = 0; index < prepared.promises.length; index += 1) {
+    prepared.resolvers[index]({ value: index });
+  }
+
+  await Promise.all(prepared.promises);
+}
+
+function setupMailboxConsumeOne(iterations) {
+  const mailbox = createInsereMailbox();
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(mailbox.wait().then((event) => {
+      sink += event.value;
+    }));
+  }
+
+  return { mailbox, promises };
+}
+
+async function mailboxConsumeOne(prepared) {
+  for (let index = 0; index < prepared.promises.length; index += 1) {
+    prepared.mailbox.emitOne({ value: index });
+  }
+
+  await Promise.all(prepared.promises);
+}
+
 function setupMapTargetedEventBus(iterations) {
   const waiters = new Map();
   const promises = [];
@@ -492,6 +536,18 @@ const insereMailbox = await measurePreparedAsync(
   setupMailboxWaiters,
   mailboxFanout
 );
+const promiseMailboxConsumeOne = await measurePreparedAsync(
+  "Promise resolver queue",
+  mailboxEvents,
+  setupPromiseConsumeOne,
+  promiseConsumeOne
+);
+const insereMailboxConsumeOne = await measurePreparedAsync(
+  "InsereMailbox emitOne",
+  mailboxEvents,
+  setupMailboxConsumeOne,
+  mailboxConsumeOne
+);
 const mapScriptEvents = await measurePreparedAsync(
   "Map keyed Promise event bus",
   scriptEvents,
@@ -546,6 +602,11 @@ const frameworkRows = [
     scenario: "Mailbox fanout",
     baseline: eventTargetMailbox,
     insere: insereMailbox
+  },
+  {
+    scenario: "Mailbox consume-one",
+    baseline: promiseMailboxConsumeOne,
+    insere: insereMailboxConsumeOne
   },
   {
     scenario: "Script event bus targeted",

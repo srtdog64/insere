@@ -1,10 +1,10 @@
 # Insere
 
-Small cooperative scheduler for frame-aware TypeScript apps.
+Host-cooperative task runtime for frame-aware TypeScript apps.
 
-Insere is not a Promise replacement, worker pool, or general task runtime. It
-is a small cooperative scheduler for keyed, cancellable, explicitly scheduled
-work that should run with an editor, game, or renderer clock.
+Insere is not a Promise replacement, worker pool, or general job queue. It is a
+small host-cooperative task runtime for keyed, cancellable, explicitly
+scheduled work that should run with an editor, game, or renderer clock.
 
 ```txt
 inserere = in + serere
@@ -96,11 +96,58 @@ editor.applyDirect("autosave", () => {
 api.tick(performance.now());
 ```
 
+Large hosts can start from the host adapter when they need one clock, one key
+space, inbound events, keyed event channels, logging, and supervision:
+
+```ts
+import { createInsereHostAdapter, dispatch } from "@exornea/insere";
+
+type HostEvent =
+  | { type: "pointerup"; x: number; y: number }
+  | { type: "damage"; amount: number };
+
+type AppEvent =
+  | { type: "commitPointer"; event: HostEvent }
+  | { type: "taskFailed"; failure: unknown };
+
+const host = createInsereHostAdapter<unknown, AppEvent, HostEvent>({
+  dispatch: (event) => console.log(event),
+  mailbox: { buffer: "bounded", capacity: 256 },
+  supervision: {
+    policy: "dispatchAndStop",
+    toEvent: (failure) => ({ type: "taskFailed", failure })
+  }
+});
+
+host.api.applyEffect("input:pointerup", function* (ctx) {
+  const event = yield* host.waitEvent(
+    (item) => item.type === "pointerup"
+  )(ctx);
+  yield* dispatch({ type: "commitPointer", event })(ctx);
+});
+
+host.api.applyDirect("entity:42:events", (ctx) => {
+  const unsubscribe = host.subscribeTo(
+    "entity:42",
+    (event) => console.log("entity event", event),
+    { signal: ctx.signal }
+  );
+
+  ctx.onCancel(unsubscribe);
+  ctx.waitFrame();
+});
+
+host.emit({ type: "pointerup", x: 12, y: 20 });
+host.publishTo("entity:42", { type: "damage", amount: 3 });
+host.tick(performance.now());
+```
+
 ## Model
 
-Insere is a scheduler, not an executor. It never owns threads, CPU parallelism,
-I/O execution, or background work. The host owns the clock and calls `tick(now)`;
-Insere only advances work that has explicitly yielded back to that host clock.
+Insere is a task runtime, not a standalone executor. It never owns threads,
+CPU parallelism, I/O execution, or background work. The host owns the clock and
+calls `tick(now)`; Insere only advances work that has explicitly yielded back
+to that host clock.
 
 - A direct task is a keyed callback over the host clock.
 - A routine is a generator.
@@ -139,7 +186,8 @@ Effect helpers cover the small composition surface:
   `createBufferedInsereLogger` for bug records at the API boundary; disabled
   logging is a fast no-op and does not read `requestId`
 - framework layer: `createInsereHostAdapter`, `InsereMailbox`, `waitEvent`,
-  and explicit supervision policy for large host applications
+  `InsereEventBus`, `waitBusEvent`, listener-only `publish`, and explicit
+  supervision policy for large host applications
 
 Runtime state stays observable without taking ownership away from the host:
 `size`, `frame`, `now`, `has(key)`, `keys()`, and `snapshot()` report the
@@ -158,7 +206,7 @@ Good fits:
 Poor fits:
 
 - replacing `async` / `await`
-- pretending to be a full task runtime
+- pretending to be a standalone executor
 - CPU parallelism
 - worker pools
 - general job queues
@@ -170,9 +218,9 @@ Version `0.1.0` is a public pre-release. The core scheduler, API facade,
 logging, supervision, mailbox, and benchmark gates are usable, but the API
 should still be treated as experimental until real host dogfood stabilizes it.
 
-See [`docs/todo.md`](docs/todo.md) for the next design items, especially event
-mailbox, failure supervision, host adapter guidance, and entity lifecycle
-composition.
+See [`docs/todo.md`](docs/todo.md) for the current design status. Event
+mailbox, failure supervision, host adapter guidance, and benchmark gates are
+implemented; entity lifecycle composition remains a recipe-level design item.
 
 See [`docs/api.md`](docs/api.md) for the host-facing facade design.
 
@@ -185,4 +233,6 @@ adapter, and AbortSignal I/O conventions.
 See [`docs/performance.md`](docs/performance.md) for the current benchmark
 against plain TypeScript/JavaScript baselines.
 
-Run `npm run verify:geukbit` for the Geukbit scale stress and benchmark gate.
+Run `npm run check` for the standard build, test, export-smoke, and pack gate.
+Run `npm run verify:geukbit` for the Geukbit scale stress and benchmark gate,
+or `npm run check:release` before cutting a release candidate.

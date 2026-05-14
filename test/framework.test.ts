@@ -39,6 +39,38 @@ describe("Insere framework layers", () => {
     expect(api.size).toBe(0);
   });
 
+  it("can consume only the first matching mailbox waiter", async () => {
+    const mailbox = createInsereMailbox<string>();
+    const events: string[] = [];
+    const waits = [
+      mailbox.wait().then((event) => events.push(`first:${event}`)),
+      mailbox.wait().then((event) => events.push(`second:${event}`)),
+      mailbox.wait((event) => event === "other")
+        .then((event) => events.push(`other:${event}`))
+    ];
+
+    expect(mailbox.waiters).toBe(3);
+    expect(mailbox.emitOne("commit")).toBe(1);
+    await Promise.resolve();
+
+    expect(events).toEqual(["first:commit"]);
+    expect(mailbox.waiters).toBe(2);
+    expect(mailbox.emit("commit")).toBe(1);
+    expect(mailbox.emit("other")).toBe(1);
+    await Promise.all(waits);
+
+    expect(events).toEqual(["first:commit", "second:commit", "other:other"]);
+    expect(mailbox.waiters).toBe(0);
+  });
+
+  it("buffers consume-one mailbox events when nothing matches", async () => {
+    const mailbox = createInsereMailbox<string>({ buffer: "queue" });
+
+    mailbox.wait((event) => event === "commit");
+    expect(mailbox.emitOne("miss")).toBe(0);
+    await expect(mailbox.wait()).resolves.toBe("miss");
+  });
+
   it("removes mailbox waiters when the owning task is cancelled", () => {
     const events: string[] = [];
     const mailbox = createInsereMailbox<string>();
@@ -270,6 +302,29 @@ describe("Insere framework layers", () => {
     expect(events).toEqual(["commit"]);
   });
 
+  it("exposes consume-one mailbox delivery from the host adapter", async () => {
+    const events: string[] = [];
+    const host = createInsereHostAdapter<unknown, string, string>({
+      dispatch: (event) => events.push(event)
+    });
+
+    host.api.applyEffect("first", function* (context) {
+      const event = yield* host.waitEvent()(context);
+      yield* dispatch(`first:${event}`)(context);
+    });
+    host.api.applyEffect("second", function* (context) {
+      const event = yield* host.waitEvent()(context);
+      yield* dispatch(`second:${event}`)(context);
+    });
+
+    expect(host.emitOne("commit")).toBe(1);
+    await Promise.resolve();
+    host.tick(1);
+
+    expect(events).toEqual(["first:commit"]);
+    expect(host.mailbox.waiters).toBe(1);
+  });
+
   it("lets host event bus subscriptions follow external abort signals", () => {
     const host = createInsereHostAdapter<unknown, never, string>();
     const controller = new AbortController();
@@ -302,6 +357,18 @@ describe("Insere framework layers", () => {
 
     host.emitTo("entity:2", "queued");
     await expect(host.eventBus.wait("entity:2")).resolves.toBe("queued");
+  });
+
+  it("lets host event bus listener failures bubble", () => {
+    const host = createInsereHostAdapter<unknown, never, string>();
+
+    host.subscribeTo("entity:1", () => {
+      throw new Error("listener failed");
+    });
+
+    expect(() => host.publishTo("entity:1", "event")).toThrow(
+      "listener failed"
+    );
   });
 
   it("exposes AbortSignal I/O convention through abortable effects", () => {
