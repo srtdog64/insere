@@ -11,6 +11,12 @@ inserere = in + serere
 to insert, weave in, thread into place
 ```
 
+## Install
+
+```sh
+npm install @exornea/insere
+```
+
 Use Insere when work has a named slot and a newer run should supersede the old
 one:
 
@@ -160,7 +166,9 @@ Poor fits:
 
 ## Status
 
-Initial skeleton. API is experimental.
+Version `0.1.0` is a public pre-release. The core scheduler, API facade,
+logging, supervision, mailbox, and benchmark gates are usable, but the API
+should still be treated as experimental until real host dogfood stabilizes it.
 
 See [`docs/todo.md`](docs/todo.md) for the next design items, especially event
 mailbox, failure supervision, host adapter guidance, and entity lifecycle
