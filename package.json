@@ -14,6 +14,22 @@
     "./api": {
       "types": "./dist/api.d.ts",
       "default": "./dist/api.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "default": "./dist/host.js"
+    },
+    "./mailbox": {
+      "types": "./dist/mailbox.d.ts",
+      "default": "./dist/mailbox.js"
+    },
+    "./event-bus": {
+      "types": "./dist/event-bus.d.ts",
+      "default": "./dist/event-bus.js"
+    },
+    "./supervision": {
+      "types": "./dist/supervision.d.ts",
+      "default": "./dist/supervision.js"
     }
   },
   "files": [
@@ -25,12 +41,16 @@
   ],
   "scripts": {
     "benchmark": "npm run build && node benchmark/compare.mjs",
+    "benchmark:geukbit": "npm run build && node benchmark/geukbit-scale.mjs",
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "pack:check": "npm pack --dry-run",
     "prebuild": "rimraf dist",
+    "smoke:exports": "node scripts/smoke-exports.mjs",
+    "stress:geukbit": "vitest run test/geukbit-scale.test.ts",
+    "verify:geukbit": "npm run stress:geukbit && npm run benchmark:geukbit",
     "test": "vitest run",
-    "check": "npm run build && npm test && npm run pack:check"
+    "check": "npm run build && npm test && npm run smoke:exports && npm run pack:check"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

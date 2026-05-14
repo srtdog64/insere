@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createBufferedInsereLogger,
   createInsereApi,
   dispatch,
   ok,
@@ -183,5 +184,89 @@ describe("InsereApi", () => {
 
     expect(api.direct.has("shared")).toBe(true);
     expect(api.effect.has("shared")).toBe(false);
+  });
+
+  it("logs duplicate spawn policy bugs without throwing from Result APIs", () => {
+    const logs = createBufferedInsereLogger();
+    const api = createInsereApi({ logger: logs.logger });
+
+    api.applyEffect("shared", sleep(10));
+    const result = api.applyDirectResult(
+      "shared",
+      (ctx) => ctx.complete(),
+      "spawn",
+      "frame"
+    );
+
+    expect(result.ok).toBe(false);
+    expect(logs.records).toHaveLength(1);
+    expect(logs.records[0]).toMatchObject({
+      level: "error",
+      kind: "bug",
+      runtime: "api",
+      operation: "applyDirectResult",
+      key: "shared",
+      policy: "spawn",
+      frame: 0,
+      now: 0,
+      delta: 0,
+      data: { start: "frame" }
+    });
+  });
+
+  it("logs invalid task specs returned through Result APIs", () => {
+    const logs = createBufferedInsereLogger();
+    const api = createInsereApi({ logger: logs.logger });
+
+    const result = api.applyEffectResult("", sleep(1), "restart");
+
+    expect(result.ok).toBe(false);
+    expect(logs.records).toHaveLength(1);
+    expect(logs.records[0]).toMatchObject({
+      level: "error",
+      kind: "bug",
+      operation: "applyEffectResult",
+      key: "",
+      policy: "restart"
+    });
+  });
+
+  it("logs uncaught runtime bugs and rethrows the original error", () => {
+    const logs = createBufferedInsereLogger();
+    const api = createInsereApi({ logger: logs.logger });
+    const error = new Error("boom");
+
+    api.waitFrame("broken", () => {
+      throw error;
+    });
+
+    expect(() => api.tick(16)).toThrow(error);
+    expect(logs.records).toHaveLength(1);
+    expect(logs.records[0]).toMatchObject({
+      level: "error",
+      kind: "bug",
+      operation: "tick",
+      frame: 1,
+      now: 16,
+      delta: 0,
+      data: { tickNow: 16 },
+      cause: error
+    });
+  });
+
+  it("does not let logger failures hide runtime failures", () => {
+    const original = new Error("task failed");
+    const loggerFailure = new Error("logger failed");
+    const api = createInsereApi({
+      logger: () => {
+        throw loggerFailure;
+      }
+    });
+
+    api.waitFrame("broken", () => {
+      throw original;
+    });
+
+    expect(() => api.tick(1)).toThrow(original);
   });
 });

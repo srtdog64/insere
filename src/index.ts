@@ -6,6 +6,19 @@ export {
   type InsereApiSnapshot
 } from "./api.js";
 export {
+  createBufferedInsereLogger,
+  createConsoleInsereLogger,
+  logInsereBug,
+  type BufferedInsereLogger,
+  type InsereBugLogOptions,
+  type InsereConsoleLike,
+  type InsereLogger,
+  type InsereLogKind,
+  type InsereLogLevel,
+  type InsereLogRecord,
+  type InsereLogRuntime
+} from "./logging.js";
+export {
   DirectInsereTask,
   InsereCore,
   type DirectInsereContext,
@@ -38,10 +51,12 @@ export {
 } from "./instruction.js";
 export {
   acquireUseRelease,
+  abortable,
   access,
   asyncEffect,
   awaitPromise,
   checkCancellation,
+  currentDelta,
   currentFrame,
   currentKey,
   currentTime,
@@ -105,3 +120,35 @@ export {
   type InsereTask,
   type InsereTaskPolicy
 } from "./task.js";
+export {
+  InsereMailbox,
+  createInsereMailbox,
+  waitEvent,
+  type InsereEventMatcher,
+  type InsereMailboxBufferPolicy,
+  type InsereMailboxOptions,
+  type InsereMailboxOverflowPolicy,
+  type InsereMailboxWaitOptions
+} from "./mailbox.js";
+export {
+  InsereEventBus,
+  createInsereEventBus,
+  waitBusEvent,
+  type InsereEventBusOptions,
+  type InsereEventBusWaitOptions
+} from "./event-bus.js";
+export {
+  InsereHostAdapter,
+  createInsereHostAdapter,
+  type InsereHostAdapterOptions
+} from "./host.js";
+export {
+  failureResult,
+  normalizeInsereSupervision,
+  type InsereFailure,
+  type InsereFailureOperation,
+  type InsereRuntimeKind,
+  type InsereSupervisionOptions,
+  type InsereSupervisionPolicy,
+  type NormalizedInsereSupervision
+} from "./supervision.js";

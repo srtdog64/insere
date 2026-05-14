@@ -1,8 +1,11 @@
 import { performance } from "node:perf_hooks";
+import { setMaxListeners } from "node:events";
 
 import {
   DirectInsereTask,
   Insere,
+  createInsereEventBus,
+  createInsereMailbox,
   frame,
   matchResult,
   ok
@@ -11,6 +14,8 @@ import {
 const restartIterations = Number(process.env.INSERE_BENCH_RESTARTS ?? 100_000);
 const frameTasks = Number(process.env.INSERE_BENCH_FRAME_TASKS ?? 10_000);
 const cancelTasks = Number(process.env.INSERE_BENCH_CANCEL_TASKS ?? 10_000);
+const mailboxEvents = Number(process.env.INSERE_BENCH_MAILBOX_EVENTS ?? 10_000);
+const scriptEvents = Number(process.env.INSERE_BENCH_SCRIPT_EVENTS ?? 5_000);
 const resultIterations = Number(process.env.INSERE_BENCH_RESULTS ?? 1_000_000);
 const repeats = Number(process.env.INSERE_BENCH_REPEATS ?? 11);
 
@@ -323,6 +328,97 @@ function directBranch(iterations) {
   }
 }
 
+function setupEventTargetWaiters(iterations) {
+  const target = new EventTarget();
+  setMaxListeners(0, target);
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(new Promise((resolve) => {
+      target.addEventListener("commit", () => {
+        sink += 1;
+        resolve();
+      }, { once: true });
+    }));
+  }
+
+  return { target, promises };
+}
+
+async function eventTargetFanout(prepared) {
+  prepared.target.dispatchEvent(new Event("commit"));
+  await Promise.all(prepared.promises);
+}
+
+function setupMailboxWaiters(iterations) {
+  const mailbox = createInsereMailbox();
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(mailbox.wait((event) => event === "commit").then(() => {
+      sink += 1;
+    }));
+  }
+
+  return { mailbox, promises };
+}
+
+async function mailboxFanout(prepared) {
+  prepared.mailbox.emit("commit");
+  await Promise.all(prepared.promises);
+}
+
+function setupMapTargetedEventBus(iterations) {
+  const waiters = new Map();
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(new Promise((resolve) => {
+      waiters.set(`entity:${index}`, (event) => {
+        sink += event.entity;
+        resolve();
+      });
+    }));
+  }
+
+  return { waiters, promises };
+}
+
+async function mapTargetedEventBus(prepared) {
+  for (let index = 0; index < prepared.promises.length; index += 1) {
+    const key = `entity:${index}`;
+    const waiter = prepared.waiters.get(key);
+
+    if (waiter) {
+      prepared.waiters.delete(key);
+      waiter({ entity: index });
+    }
+  }
+
+  await Promise.all(prepared.promises);
+}
+
+function setupInsereTargetedEventBus(iterations) {
+  const eventBus = createInsereEventBus();
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(eventBus.wait(`entity:${index}`).then((event) => {
+      sink += event.entity;
+    }));
+  }
+
+  return { eventBus, promises };
+}
+
+async function insereTargetedEventBus(prepared) {
+  for (let index = 0; index < prepared.promises.length; index += 1) {
+    prepared.eventBus.emit(`entity:${index}`, { entity: index });
+  }
+
+  await Promise.all(prepared.promises);
+}
+
 const promiseRestart = await measureAsync(
   "Promise+Map+Abort latest-only",
   restartIterations,
@@ -384,6 +480,30 @@ const resultValue = measure(
   resultIterations,
   resultBranch
 );
+const eventTargetMailbox = await measurePreparedAsync(
+  "EventTarget once Promise waiters",
+  mailboxEvents,
+  setupEventTargetWaiters,
+  eventTargetFanout
+);
+const insereMailbox = await measurePreparedAsync(
+  "InsereMailbox waitEvent fanout",
+  mailboxEvents,
+  setupMailboxWaiters,
+  mailboxFanout
+);
+const mapScriptEvents = await measurePreparedAsync(
+  "Map keyed Promise event bus",
+  scriptEvents,
+  setupMapTargetedEventBus,
+  mapTargetedEventBus
+);
+const insereScriptEvents = await measurePreparedAsync(
+  "InsereEventBus keyed waits",
+  scriptEvents,
+  setupInsereTargetedEventBus,
+  insereTargetedEventBus
+);
 
 const p0Rows = [
   {
@@ -421,6 +541,19 @@ const referenceRows = [
   }
 ];
 
+const frameworkRows = [
+  {
+    scenario: "Mailbox fanout",
+    baseline: eventTargetMailbox,
+    insere: insereMailbox
+  },
+  {
+    scenario: "Script event bus targeted",
+    baseline: mapScriptEvents,
+    insere: insereScriptEvents
+  }
+];
+
 console.log("# Insere benchmark");
 console.log("");
 console.log(`Node: ${process.version}`);
@@ -429,6 +562,8 @@ console.log("");
 printTable("P0 targets", p0Rows);
 console.log("");
 printTable("Reference checks", referenceRows);
+console.log("");
+printTable("Framework checks", frameworkRows);
 console.log("");
 console.log(`sink=${sink}`);
 

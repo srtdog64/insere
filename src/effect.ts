@@ -109,6 +109,15 @@ export function asyncEffect<TState, TEvent, TValue>(
   };
 }
 
+export function abortable<TState, TEvent, TValue>(
+  run: (
+    signal: AbortSignal,
+    context: InsereContext<TState, TEvent>
+  ) => Promise<TValue>
+): InsereEffect<TState, TEvent, TValue> {
+  return asyncEffect((context) => run(context.signal, context));
+}
+
 export function fail(error: unknown): InsereEffect<unknown, unknown, never> {
   return function* () {
     throw error;
@@ -130,6 +139,12 @@ export function currentKey(): InsereEffect<unknown, unknown, string> {
 export function currentTime(): InsereEffect<unknown, unknown, number> {
   return function* (context) {
     return context.now;
+  };
+}
+
+export function currentDelta(): InsereEffect<unknown, unknown, number> {
+  return function* (context) {
+    return context.delta;
   };
 }
 

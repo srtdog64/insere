@@ -44,6 +44,14 @@ task declarations -> effects -> routines -> runtime -> instructions
   under that prefix.
 - Direct task specs and `DirectInsereTaskScope` apply the same
   `spawn`/`restart`/`skip` policy model to direct callbacks.
+- `host` provides `InsereHostAdapter`, a large-host facade that combines the
+  API facade, an inbound mailbox, host-clock helpers, supervision policy, and
+  structured logging.
+- `mailbox` provides `InsereMailbox` and `waitEvent` for cancellable inbound
+  event waits with explicit buffering.
+- `supervision` defines `InsereFailure` and the post-failure policies:
+  `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`, and bounded
+  `restart`.
 
 The package also exposes `@exornea/insere/api` for applications that want the
 facade without importing every lower-level building block from the root entry.

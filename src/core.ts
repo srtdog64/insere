@@ -1,3 +1,5 @@
+import type { InsereFailure } from "./supervision.js";
+
 export type DirectInsereDispatch<TEvent = unknown> = (event: TEvent) => void;
 export type DirectInsereStateReader<TState = unknown> = () => TState;
 export type DirectInsereWaitKind = "ready" | "frame" | "idle" | "delay";
@@ -26,6 +28,7 @@ export type DirectInsereStep<TState = unknown, TEvent = unknown> = (
 export interface DirectInsereOptions<TState = unknown, TEvent = unknown> {
   readonly dispatch?: DirectInsereDispatch<TEvent>;
   readonly getState?: DirectInsereStateReader<TState>;
+  readonly onFailure?: (failure: InsereFailure) => void;
 }
 
 export interface DirectInsereEntrySnapshot {
@@ -60,6 +63,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   readonly #context: DirectInsereContext<TState, TEvent>;
   readonly #dispatch: DirectInsereDispatch<TEvent>;
   readonly #getState: DirectInsereStateReader<TState>;
+  readonly #onFailure: ((failure: InsereFailure) => void) | undefined;
   #frameQueue: Entry<TState, TEvent>[] = [];
   #queuedFrameCount = 0;
   #structureVersion = 0;
@@ -73,6 +77,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   constructor(options: DirectInsereOptions<TState, TEvent> = {}) {
     this.#dispatch = options.dispatch ?? (() => undefined);
     this.#getState = options.getState ?? (() => undefined as TState);
+    this.#onFailure = options.onFailure;
     this.#context = this.#createContext();
   }
 
@@ -462,6 +467,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       return;
     }
 
+    const wait = entry.wait === "done" ? "ready" : entry.wait;
     entry.wait = "done";
     this.#activeEntry = entry;
 
@@ -474,6 +480,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       }
     } catch (error) {
       this.#activeEntry = undefined;
+      this.#reportFailure(entry, wait, error);
       this.#cancelEntry(entry);
       this.#deleteEntry(entry);
       throw error;
@@ -643,6 +650,27 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
     }
 
     return this.#activeEntry;
+  }
+
+  #reportFailure(
+    entry: Entry<TState, TEvent>,
+    wait: DirectInsereWaitKind,
+    cause: unknown
+  ): void {
+    try {
+      this.#onFailure?.({
+        runtime: "direct",
+        operation: "task",
+        key: entry.key,
+        wait,
+        frame: this.#frame,
+        now: this.#now,
+        delta: this.#delta,
+        cause
+      });
+    } catch {
+      // Failure reporters must not prevent task cleanup or rethrow semantics.
+    }
   }
 }
 

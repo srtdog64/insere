@@ -17,6 +17,23 @@ editor.applyEffectResult("autosave", autosaveEffect, "skip");
 api.tick(performance.now());
 ```
 
+Pass `logger` when the host wants structured bug records:
+
+```ts
+import {
+  createConsoleInsereLogger,
+  createInsereApi
+} from "@exornea/insere/api";
+
+const api = createInsereApi({
+  logger: createConsoleInsereLogger(),
+  supervision: {
+    policy: "dispatchAndStop",
+    toEvent: (failure) => ({ type: "taskFailed", failure })
+  }
+});
+```
+
 ## Goals
 
 - Keep direct tasks and generator effects on one host clock.
@@ -71,6 +88,19 @@ Result methods exist for host adapters:
 ```ts
 const result = api.applyDirectResult("autosave", step, "skip", "frame");
 ```
+
+When a logger is installed, duplicate `spawn`, invalid task specs, uncaught
+task failures, and cancellation failures also emit `kind: "bug"` records.
+`skip` and normal `restart` decisions do not log.
+
+See [`logging.md`](logging.md) for the full record shape and bug logging
+contract.
+
+Supervision is separate from task policy. Task policy controls how work starts;
+supervision controls what happens after uncaught failure. The API facade
+supports `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`, and
+bounded `restart`. See [`framework.md`](framework.md) for the larger host
+adapter model.
 
 The Result value shape is shared:
 

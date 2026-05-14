@@ -12,6 +12,7 @@ import {
   awaitPromise,
   dispatch,
   err,
+  currentDelta,
   currentFrame,
   currentKey,
   currentTime,
@@ -493,7 +494,7 @@ describe("Insere effect layer", () => {
     expect(events).toEqual(["tick", "tick", "tick"]);
   });
 
-  it("reads current frame and time from effect context", () => {
+  it("reads current frame, time, and delta from effect context", () => {
     const events: string[] = [];
     const insere = new Insere<unknown, string>({
       dispatch: (event) => events.push(event)
@@ -501,7 +502,9 @@ describe("Insere effect layer", () => {
     const program = flatMap<unknown, string, number, void>(
       currentFrame(),
       (frame) =>
-        flatMap(currentTime(), (time) => dispatch(`${frame}:${time}`))
+        flatMap(currentTime(), (time) =>
+          flatMap(currentDelta(), (delta) => dispatch(`${frame}:${time}:${delta}`))
+        )
     );
 
     insere.restart("clock", toRoutine(sequence<unknown, string>([sleep(12), program])));
@@ -509,7 +512,7 @@ describe("Insere effect layer", () => {
     expect(events).toEqual([]);
     insere.tick(12);
 
-    expect(events).toEqual(["2:12"]);
+    expect(events).toEqual(["2:12:1"]);
   });
 
   it("creates async work lazily when the effect starts", async () => {
@@ -879,6 +882,7 @@ describe("Insere task layer", () => {
     expect(scope.snapshot("projection")).toEqual({
       frame: 0,
       now: 0,
+      delta: 0,
       size: 2,
       entries: [
         { key: "editor:projection:primary", wait: "delay" },

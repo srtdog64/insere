@@ -306,6 +306,7 @@ export class InsereTaskScope<TState = unknown, TEvent = unknown> {
     return {
       frame: snapshot.frame,
       now: snapshot.now,
+      delta: snapshot.delta,
       size: entries.length,
       entries
     };

@@ -202,6 +202,7 @@ describe("Insere", () => {
     expect(insere.snapshot()).toEqual({
       frame: 0,
       now: 0,
+      delta: 0,
       size: 3,
       entries: [
         { key: "frame", wait: "frame" },
@@ -300,5 +301,21 @@ describe("Insere", () => {
 
     insere.cancel("session");
     expect(events).toEqual([]);
+  });
+
+  it("does not let failure reporters prevent routine cleanup", () => {
+    const insere = new Insere({
+      onFailure: () => {
+        throw new Error("report failed");
+      }
+    });
+
+    insere.restart("broken", function* () {
+      yield frame();
+      throw new Error("routine failed");
+    });
+
+    expect(() => insere.tick(1)).toThrow("routine failed");
+    expect(insere.has("broken")).toBe(false);
   });
 });

@@ -232,6 +232,29 @@ Direct task application has the same Result form through
 This keeps policy reporting identical between generator/effect tasks and direct
 tasks.
 
+## Framework Semantics
+
+The framework layer adds first-class host concerns:
+
+- `InsereMailbox` receives inbound host events.
+- `waitEvent(mailbox, match)` suspends an effect until a matching event arrives.
+- Cancelling the task removes its mailbox waiter.
+- `InsereHostAdapter` combines one `InsereApi`, one mailbox, and one host
+  clock.
+- Supervision is explicit and separate from task application policy.
+
+Supervision policies:
+
+- `bubble`: rethrow the original failure.
+- `logAndStop`: record the failure and leave the failed task stopped.
+- `dispatchAndStop`: convert failure into a host event.
+- `convertToResult`: report `err(failure)` to the host.
+- `restart`: restart API-owned work up to `maxRestarts`.
+
+`restart` supervision is bounded and only works for tasks started through the
+API facade, because the facade owns the callback/effect needed to recreate the
+task.
+
 ## Keyed Supersession
 
 `restart(key, routine)` cancels the previous routine for the same key before

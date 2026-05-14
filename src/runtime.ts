@@ -1,4 +1,5 @@
 import type { InsereInstruction } from "./instruction.js";
+import type { InsereFailure } from "./supervision.js";
 
 export type InsereDispatch<TEvent = unknown> = (event: TEvent) => void;
 export type InsereStateReader<TState = unknown> = () => TState;
@@ -7,6 +8,7 @@ export interface InsereContext<TState = unknown, TEvent = unknown> {
   readonly key: string;
   readonly frame: number;
   readonly now: number;
+  readonly delta: number;
   readonly signal: AbortSignal;
   dispatch(event: TEvent): void;
   getState(): TState;
@@ -27,6 +29,7 @@ export type InsereRoutineFactory<TState = unknown, TEvent = unknown> = (
 export interface InsereOptions<TState = unknown, TEvent = unknown> {
   readonly dispatch?: InsereDispatch<TEvent>;
   readonly getState?: InsereStateReader<TState>;
+  readonly onFailure?: (failure: InsereFailure) => void;
 }
 
 export type InsereWaitKind = "ready" | "frame" | "idle" | "delay" | "promise";
@@ -39,6 +42,7 @@ export interface InsereEntrySnapshot {
 export interface InsereSnapshot {
   readonly frame: number;
   readonly now: number;
+  readonly delta: number;
   readonly size: number;
   readonly entries: readonly InsereEntrySnapshot[];
 }
@@ -65,15 +69,19 @@ export class Insere<TState = unknown, TEvent = unknown> {
   readonly #entries = new Map<string, Entry<TState, TEvent>>();
   readonly #dispatch: InsereDispatch<TEvent>;
   readonly #getState: InsereStateReader<TState>;
+  readonly #onFailure: ((failure: InsereFailure) => void) | undefined;
   readonly #context: InsereContext<TState, TEvent>;
   #activeEntry: Entry<TState, TEvent> | undefined;
   #soleEntry: Entry<TState, TEvent> | undefined;
   #frame = 0;
   #now = 0;
+  #previousNow = 0;
+  #delta = 0;
 
   constructor(options: InsereOptions<TState, TEvent> = {}) {
     this.#dispatch = options.dispatch ?? (() => undefined);
     this.#getState = options.getState ?? (() => undefined as TState);
+    this.#onFailure = options.onFailure;
     this.#context = this.#createContext();
   }
 
@@ -89,6 +97,10 @@ export class Insere<TState = unknown, TEvent = unknown> {
     return this.#now;
   }
 
+  get delta(): number {
+    return this.#delta;
+  }
+
   has(key: string): boolean {
     return this.#entries.has(key);
   }
@@ -101,6 +113,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
     return {
       frame: this.#frame,
       now: this.#now,
+      delta: this.#delta,
       size: this.#entries.size,
       entries: [...this.#entries.values()].map((entry) => ({
         key: entry.key,
@@ -188,6 +201,8 @@ export class Insere<TState = unknown, TEvent = unknown> {
     }
 
     this.#now = now;
+    this.#delta = this.#frame === 0 ? 0 : now - this.#previousNow;
+    this.#previousNow = now;
     this.#frame += 1;
 
     if (this.#soleEntry) {
@@ -250,6 +265,9 @@ export class Insere<TState = unknown, TEvent = unknown> {
       },
       get now() {
         return runtime.#now;
+      },
+      get delta() {
+        return runtime.#delta;
       },
       get signal() {
         const entry = runtime.#requireActiveEntry();
@@ -344,6 +362,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       this.#setWait(entry, result.value);
     } catch (error) {
       this.#activeEntry = undefined;
+      this.#reportFailure(entry, "ready", error);
       entry.aborted = true;
       entry.controller?.abort();
       this.#deleteEntry(entry.key);
@@ -369,6 +388,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       this.#setWait(entry, result.value);
     } catch (thrown) {
       this.#activeEntry = undefined;
+      this.#reportFailure(entry, entry.wait, thrown);
       entry.aborted = true;
       entry.controller?.abort();
       this.#deleteEntry(entry.key);
@@ -467,6 +487,27 @@ export class Insere<TState = unknown, TEvent = unknown> {
   #assertKey(key: string): void {
     if (key.length === 0) {
       throw new Error("Insere routine key must not be empty.");
+    }
+  }
+
+  #reportFailure(
+    entry: Entry<TState, TEvent>,
+    wait: InsereWaitKind,
+    cause: unknown
+  ): void {
+    try {
+      this.#onFailure?.({
+        runtime: "effect",
+        operation: "task",
+        key: entry.key,
+        wait,
+        frame: this.#frame,
+        now: this.#now,
+        delta: this.#delta,
+        cause
+      });
+    } catch {
+      // Failure reporters must not prevent task cleanup or rethrow semantics.
     }
   }
 }

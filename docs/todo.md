@@ -59,6 +59,17 @@ These items are now designed and implemented in the core API:
 - API facade: `createInsereApi`, `InsereApi`, and `InsereApiScope` with shared
   direct/effect ticking, scoped keys, cancellation, snapshots, and Result
   policy reports.
+- Structured logging: `InsereLogger`, `InsereLogRecord`,
+  `createConsoleInsereLogger`, `createBufferedInsereLogger`, and API-boundary
+  bug logging for duplicate spawn, invalid task specs, uncaught task failures,
+  and cancellation/restart failures.
+- Framework layer: `InsereHostAdapter`, `InsereMailbox`, `waitEvent`,
+  `InsereEventBus`, `waitBusEvent`, `abortable`, and explicit supervision
+  policy with `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`,
+  and bounded `restart`.
+- Geukbit adoption gate: `docs/geukbit-adoption.md` documents key conventions,
+  event ingress, failure policy, I/O convention, verification commands, and the
+  first dogfood slice.
 
 ## Performance Baseline
 
@@ -67,17 +78,23 @@ These items are now designed and implemented in the core API:
 Current local result, measured on 2026-05-14 with Node `v22.17.0` and
 `INSERE_BENCH_REPEATS=11`:
 
-- Direct restart storm is about 109.93x faster than a Promise+Map+Abort
+- Direct restart storm is about 149.73x faster than a Promise+Map+Abort
   latest-only implementation.
-- Direct frame continuation for 10k already-waiting tasks is about 3.23x faster
+- Direct frame continuation for 10k already-waiting tasks is about 3.14x faster
   than `async`/`await Promise.resolve` continuation flushing.
-- Direct `cancelGroup("asset:")` for 10k keyed tasks is about 417.07x faster
-  than Map+AbortController cancellation and completed in 0.19ms.
+- Direct `cancelGroup("asset:")` for 10k keyed tasks is about 338.54x faster
+  than Map+AbortController cancellation and completed in 0.28ms.
 - Direct mixed `cancelGroup("asset:")` with `preview:` tasks also present is
-  about 69.37x faster and completed in 0.58ms through the group index.
-- Generator `Insere` frame routine is about 1.2x faster than the Promise frame
+  about 91.22x faster and completed in 0.68ms through the group index.
+- Generator `Insere` frame routine is about 1.28x faster than the Promise frame
   continuation baseline in the reference benchmark.
-- Direct value branching is about 1.03x faster than `InsereResult ok/match`.
+- Direct value branching is about 1.57x faster than `InsereResult ok/match`.
+- `InsereMailbox` fanout is about 1.87x slower than a simple EventTarget
+  once-listener Promise baseline. Mailbox is for typed matching, buffering
+  policy, and cancellation cleanup, not high-volume event fanout.
+- Geukbit scale benchmark shows lifecycle cancel and projection restart are
+  strong fits, targeted script event bus is about 1.28x slower than raw Map
+  Promise delivery, and per-entity gameplay task scheduling is not a good fit.
 
 Design conclusion:
 
@@ -128,19 +145,20 @@ interface TaskRuntimePort {
 
 - Document how a host should compute `dt` outside Insere from `now`.
 - Document how host applications should convert uncaught task failures into
-  their own Result/logging systems.
+  their own Result systems. API-boundary bug logging is now documented in
+  `docs/logging.md`, but supervision policy is still separate.
 - Document how host applications should choose task policy:
   - `restart` for superseded work such as projection rebuilds
   - `spawn` for unique sessions where duplicate keys indicate a bug
   - `skip` for autosave/build/import tasks that should not overlap
 - Keep Insere free of renderer, editor, game-engine, and framework ownership.
 
-## P1: Inbound Event Mailbox
+## Completed: Inbound Event Mailbox
 
-Insere can dispatch events outward, but routines cannot currently wait for
-inbound events.
+Insere can dispatch events outward and can now wait for inbound events through
+`InsereMailbox` and `waitEvent`.
 
-Design a small event mailbox layer for cases like:
+Covered cases:
 
 - `waitEvent("pointerup")`
 - `waitEvent((event) => event.type === "animationEnd")`
@@ -148,34 +166,34 @@ Design a small event mailbox layer for cases like:
 - collision/input/animation events
 - collaborative editor command stream events
 
-Constraints:
+Implemented constraints:
 
-- Events must be explicit host input, not hidden global state.
-- Waiting routines must remain cancellable.
-- Event buffering policy must be explicit: drop, latest, queue, or bounded
-  queue.
-- The base runtime should stay small; mailbox may be an optional layer.
+- Events are explicit host input through `mailbox.emit(event)` or
+  `host.emit(event)`.
+- Waiting routines remain cancellable through `ctx.signal`.
+- Event buffering policy is explicit: `drop`, `latest`, `queue`, or `bounded`.
+- The base runtime stays small; mailbox is a framework layer.
 
-Possible shape:
+Current shape:
 
 ```ts
-runtime.emit(event);
-yield waitEvent((event) => event.type === "pointerup");
+mailbox.emit(event);
+yield* waitEvent(mailbox, (event) => event.type === "pointerup")(ctx);
 ```
 
-Open questions:
+Remaining open questions:
 
-- Should mailbox live in core runtime or in a separate effect adapter?
-- Should event matching be typed through `TEvent`?
-- How should unmatched events be retained or discarded?
+- Whether high-volume input streams need mailbox-specific benchmarks.
+- Whether mailbox fanout should remain broadcast-to-all-waiters or offer a
+  consume-one mode.
 
-## P1: Failure Supervision Policy
+## Completed: Failure Supervision Policy
 
-Today an uncaught routine failure removes that routine and throws to the host
-tick/restart caller. That is correct for a small core, but host applications
-need policy hooks.
+An uncaught routine failure removes that routine and reports an
+`InsereFailure`. The API facade logs it as `kind: "bug"` when a logger exists
+and then applies explicit supervision policy.
 
-Design supervision at the boundary, not as hidden retry magic:
+Implemented supervision policies:
 
 - `bubble`: current behavior
 - `logAndStop`: report failure and remove routine
@@ -186,38 +204,29 @@ Design supervision at the boundary, not as hidden retry magic:
 
 Constraints:
 
-- No invisible retry by default.
-- Restart must have a bounded policy.
-- Host logging should receive key, wait state, frame, now, and cause.
+- No invisible retry by default; `bubble` is the default.
+- Restart has a bounded `maxRestarts` policy.
+- Host logging receives key, frame, now, delta, operation, policy when
+  relevant, wait state when reported by the runtime, and cause.
 - Do not reuse `InsereTaskPolicy` for supervision. Task policy decides how to
   start work; supervision policy decides how to react after failure.
 
-## P2: Delta Time Helper
+## Completed: Delta Time Helper
 
-The generator runtime exposes `now` and `frame`, while `DirectInsereTask`
-also exposes `delta`. Generator `dt` is currently host-owned. This is
-acceptable, but common enough to document or add a helper.
+The generator runtime, direct runtime, API facade, and host adapter now expose
+`delta`. Effects can read it through `currentDelta()`. Insere still does not
+own frame-rate policy; the host owns the clock and passes `now` into `tick(now)`.
 
-Options:
+## Completed: AbortSignal I/O Convention
 
-- Keep `dt` host-only and document it.
-- Add `previousNow` and `delta` to `InsereContext`.
-- Add a host adapter recipe instead of adding generator runtime state.
+Insere provides `ctx.signal` and `abortable()` for I/O integrations.
 
-For now, prefer `DirectInsereTask.delta` for hot direct paths and a host
-adapter recipe for generator/effect paths. Insere should not assume frame-rate
-semantics beyond host-clock advancement.
+Documented examples for:
 
-## P2: AbortSignal I/O Convention
-
-Insere provides `ctx.signal`, but I/O integrations need a clear convention.
-
-Document examples for:
-
-- `fetch(url, { signal: ctx.signal })`
+- `fetch(url, { signal })`
 - loader APIs that accept an abort signal
 - loader APIs that do not support abort and must ignore late completion
-- converting cancellation into host Result/log events
+- converting uncaught failures into logs/supervision events
 
 This is especially important for asset import, build/export, and collaborative
 session connections.

@@ -109,9 +109,10 @@ Effect helpers cover the small composition surface:
 - values and sync work: `succeed`, `sync`, `fail`, `ok`, `err`, `isOk`,
   `isErr`, `matchResult`
 - host interaction: `dispatch`, `getState`, `access`, `currentFrame`,
-  `currentKey`, `currentTime`, `checkCancellation`, `onCancel`
+  `currentKey`, `currentTime`, `currentDelta`, `checkCancellation`, `onCancel`
 - scheduling: `sleep`, `sleepUntil`, `waitFrame`, `waitFrames`, `waitIdle`,
   `awaitPromise`, `asyncEffect`
+- I/O bridge: `abortable` for `AbortSignal`-aware Promise APIs
 - composition: `map`, `flatMap`, `tap`, `attempt`, `recover`, `ensuring`,
   `acquireUseRelease`, `when`, `unless`, `repeat`, `forEach`, `whileEffect`,
   `sequence`
@@ -124,6 +125,10 @@ Effect helpers cover the small composition surface:
   `applyDirectTask`, `applyDirectTaskResult`, and `DirectInsereTaskScope`
 - facade API: `createInsereApi`, `InsereApi`, and `InsereApiScope` from
   `@exornea/insere/api`
+- structured host logging: `logger`, `createConsoleInsereLogger`, and
+  `createBufferedInsereLogger` for bug records at the API boundary
+- framework layer: `createInsereHostAdapter`, `InsereMailbox`, `waitEvent`,
+  and explicit supervision policy for large host applications
 
 Runtime state stays observable without taking ownership away from the host:
 `size`, `frame`, `now`, `has(key)`, `keys()`, and `snapshot()` report the
@@ -157,5 +162,15 @@ composition.
 
 See [`docs/api.md`](docs/api.md) for the host-facing facade design.
 
+See [`docs/logging.md`](docs/logging.md) for structured bug logging.
+
+See [`docs/framework.md`](docs/framework.md) for mailbox, supervision, host
+adapter, and AbortSignal I/O conventions.
+
+See [`docs/geukbit-adoption.md`](docs/geukbit-adoption.md) for the Geukbit
+integration gate and first dogfood slice.
+
 See [`docs/performance.md`](docs/performance.md) for the current benchmark
 against plain TypeScript/JavaScript baselines.
+
+Run `npm run verify:geukbit` for the Geukbit scale stress and benchmark gate.

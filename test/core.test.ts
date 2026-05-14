@@ -347,6 +347,21 @@ describe("DirectInsereTask", () => {
     expect(runtime.size).toBe(0);
   });
 
+  it("does not let direct failure reporters prevent cleanup", () => {
+    const runtime = new DirectInsereTask({
+      onFailure: () => {
+        throw new Error("report failed");
+      }
+    });
+
+    runtime.waitFrame("broken", () => {
+      throw new Error("task failed");
+    });
+
+    expect(() => runtime.tick(1)).toThrow("task failed");
+    expect(runtime.has("broken")).toBe(false);
+  });
+
   it("scopes direct tasks with prefixed keys and snapshots", () => {
     const runtime = new DirectInsereTask();
     const scope = new DirectInsereTaskScope(runtime).child("editor", "projection");
