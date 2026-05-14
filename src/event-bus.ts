@@ -14,9 +14,21 @@ export interface InsereEventBusWaitOptions {
   readonly signal?: AbortSignal;
 }
 
+export interface InsereEventBusSubscribeOptions {
+  readonly signal?: AbortSignal;
+}
+
+export type InsereEventListener<TEvent> = (event: TEvent) => void;
+
 interface Waiter<TEvent> {
   readonly resolve: (event: TEvent) => void;
   readonly reject: (error: unknown) => void;
+  readonly signal: AbortSignal | undefined;
+  readonly abort: (() => void) | undefined;
+}
+
+interface Listener<TEvent> {
+  readonly run: InsereEventListener<TEvent>;
   readonly signal: AbortSignal | undefined;
   readonly abort: (() => void) | undefined;
 }
@@ -27,8 +39,10 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
   readonly #overflow: InsereMailboxOverflowPolicy;
   readonly #events = new Map<TKey, TEvent[]>();
   readonly #waiters = new Map<TKey, Waiter<TEvent> | Set<Waiter<TEvent>>>();
+  readonly #listeners = new Map<TKey, Listener<TEvent> | Set<Listener<TEvent>>>();
   #size = 0;
   #waiterCount = 0;
+  #listenerCount = 0;
 
   constructor(options: InsereEventBusOptions = {}) {
     this.#buffer = options.buffer ?? "drop";
@@ -48,6 +62,10 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
     return this.#waiterCount;
   }
 
+  get listeners(): number {
+    return this.#listenerCount;
+  }
+
   clear(key?: TKey): void {
     if (key === undefined) {
       this.#events.clear();
@@ -65,20 +83,22 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
   }
 
   emit(key: TKey, event: TEvent): number {
+    let delivered = this.#emitListeners(key, event);
     const waiters = this.#waiters.get(key);
 
     if (!waiters) {
-      this.#bufferEvent(key, event);
-      return 0;
+      if (delivered === 0) {
+        this.#bufferEvent(key, event);
+      }
+
+      return delivered;
     }
 
     if (!isWaiterSet(waiters)) {
       this.#deleteWaiter(key, waiters);
       waiters.resolve(event);
-      return 1;
+      return delivered + 1;
     }
-
-    let delivered = 0;
 
     for (const waiter of waiters) {
       this.#deleteWaiter(key, waiter);
@@ -87,6 +107,42 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
     }
 
     return delivered;
+  }
+
+  subscribe(
+    key: TKey,
+    run: InsereEventListener<TEvent>,
+    options: InsereEventBusSubscribeOptions = {}
+  ): () => void {
+    const { signal } = options;
+
+    if (signal?.aborted) {
+      return () => undefined;
+    }
+
+    let listener: Listener<TEvent>;
+    const unsubscribe = () => this.#deleteListener(key, listener);
+    const abort = signal ? unsubscribe : undefined;
+
+    listener = {
+      run,
+      signal,
+      abort
+    };
+
+    signal?.addEventListener("abort", abort as EventListener, { once: true });
+    const listeners = this.#listeners.get(key);
+
+    if (!listeners) {
+      this.#listeners.set(key, listener);
+    } else if (isListenerSet(listeners)) {
+      listeners.add(listener);
+    } else {
+      this.#listeners.set(key, new Set([listeners, listener]));
+    }
+
+    this.#listenerCount += 1;
+    return unsubscribe;
   }
 
   wait(key: TKey, options: InsereEventBusWaitOptions = {}): Promise<TEvent> {
@@ -173,6 +229,65 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
     this.#removeAbortListener(waiter);
   }
 
+  #emitListeners(key: TKey, event: TEvent): number {
+    const listeners = this.#listeners.get(key);
+
+    if (!listeners) {
+      return 0;
+    }
+
+    if (!isListenerSet(listeners)) {
+      listeners.run(event);
+      return 1;
+    }
+
+    let delivered = 0;
+
+    for (const listener of listeners) {
+      listener.run(event);
+      delivered += 1;
+    }
+
+    return delivered;
+  }
+
+  #deleteListener(key: TKey, listener: Listener<TEvent>): void {
+    const listeners = this.#listeners.get(key);
+
+    if (!listeners) {
+      return;
+    }
+
+    if (!isListenerSet(listeners)) {
+      if (listeners !== listener) {
+        return;
+      }
+
+      this.#listeners.delete(key);
+      this.#listenerCount -= 1;
+      this.#removeListenerAbortListener(listener);
+      return;
+    }
+
+    if (!listeners.delete(listener)) {
+      return;
+    }
+
+    this.#listenerCount -= 1;
+
+    if (listeners.size === 0) {
+      this.#listeners.delete(key);
+    }
+
+    this.#removeListenerAbortListener(listener);
+  }
+
+  #removeListenerAbortListener(listener: Listener<TEvent>): void {
+    if (listener.signal && listener.abort) {
+      listener.signal.removeEventListener("abort", listener.abort as EventListener);
+    }
+  }
+
   #removeAbortListener(waiter: Waiter<TEvent>): void {
     if (waiter.signal && waiter.abort) {
       waiter.signal.removeEventListener("abort", waiter.abort as EventListener);
@@ -256,6 +371,12 @@ function isWaiterSet<TEvent>(
   waiters: Waiter<TEvent> | Set<Waiter<TEvent>>
 ): waiters is Set<Waiter<TEvent>> {
   return waiters instanceof Set;
+}
+
+function isListenerSet<TEvent>(
+  listeners: Listener<TEvent> | Set<Listener<TEvent>>
+): listeners is Set<Listener<TEvent>> {
+  return listeners instanceof Set;
 }
 
 export function createInsereEventBus<TKey = string, TEvent = unknown>(

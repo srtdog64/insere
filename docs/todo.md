@@ -93,8 +93,9 @@ Current local result, measured on 2026-05-14 with Node `v22.17.0` and
   once-listener Promise baseline. Mailbox is for typed matching, buffering
   policy, and cancellation cleanup, not high-volume event fanout.
 - Geukbit scale benchmark shows lifecycle cancel and projection restart are
-  strong fits, targeted script event bus is about 1.28x slower than raw Map
-  Promise delivery, and per-entity gameplay task scheduling is not a good fit.
+  strong fits, hot script event subscription is about 1.2x slower than raw Map
+  callbacks, Promise-style script waits are slower, and per-entity gameplay
+  task scheduling is not a good fit.
 
 Design conclusion:
 

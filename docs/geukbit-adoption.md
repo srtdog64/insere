@@ -148,16 +148,21 @@ Measured on 2026-05-14 with Node `v22.17.0`:
 
 | Surface | Result | Decision |
 | --- | ---: | --- |
-| per-entity lifecycle cancel | Insere 7.82x faster | good fit for `cancelGroup("entity:")` |
-| script event bus targeted | InsereEventBus 1.28x slower | acceptable for cancellable keyed waits, not raw event throughput |
-| gameplay tick as per-entity tasks | Insere 5.1x slower | do not schedule every entity as a task |
-| physics/animation hot loop in one host task | plain TS 1.06x faster | keep inner loop plain TS inside one task |
-| runtime projection restart | Insere 9.48x faster | good fit for latest-only projection rebuilds |
+| per-entity lifecycle cancel | Insere 8.07x faster | good fit for `cancelGroup("entity:")` |
+| script event bus targeted waits | InsereEventBus 2.12x slower | use only when cancellable effect waits are needed |
+| script event bus direct callbacks | InsereEventBus 1.2x slower | preferred hot script-event path |
+| gameplay tick as per-entity tasks | Insere 4.38x slower | do not schedule every entity as a task |
+| physics/animation hot loop in one host task | Insere 1.07x faster in this run | keep inner loop plain TS inside one task |
+| runtime projection restart | Insere 5.98x faster | good fit for latest-only projection rebuilds |
 
 The important line is gameplay/physics: Insere should own the orchestration
 slot, not the inner entity iteration. Use one task per gameplay system, physics
 system, animation system, or projection job; keep the per-entity numeric loop
 in plain TypeScript arrays or engine data structures.
+
+For script events, use `host.eventBus.subscribe()` for hot continuous event
+delivery and `host.waitBusEvent()` only when a task must suspend until one
+specific event.
 
 ## First Dogfood Slice
 

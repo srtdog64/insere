@@ -96,17 +96,19 @@ Latest local result, measured on 2026-05-14 with Node `v22.17.0`:
 
 | Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 101,314.04 | 791,916.12 | 12.63 | Insere 7.82x |
-| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,080,300.31 | 3,192,032.69 | 1.57 | Baseline 1.28x |
-| gameplay tick | Promise microtask gameplay | Insere direct gameplay | 15,568,240.79 | 3,054,647.65 | 9.82 | Baseline 5.1x |
-| physics/animation hot loop | Plain TS hot loop | One Insere host task | 856,457,690.99 | 809,323,405.63 | 0.62 | Baseline 1.06x |
-| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 112,918.57 | 1,070,047.45 | 93.45 | Insere 9.48x |
+| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 98,433.53 | 794,830.42 | 12.58 | Insere 8.07x |
+| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,015,096.76 | 1,893,509.05 | 2.64 | Baseline 2.12x |
+| script event bus direct callbacks | Map keyed callbacks | InsereEventBus subscribe | 7,438,262.42 | 6,207,324.64 | 0.81 | Baseline 1.2x |
+| gameplay tick | Promise microtask gameplay | Insere direct gameplay | 11,507,921.29 | 2,626,947.22 | 11.42 | Baseline 4.38x |
+| physics/animation hot loop | Plain TS hot loop | One Insere host task | 698,226,504.68 | 750,525,367.76 | 0.67 | Insere 1.07x |
+| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 120,773.25 | 722,016.97 | 138.5 | Insere 5.98x |
 
 Interpretation:
 
 - Use Insere for lifecycle cancellation and projection restart.
-- Use `InsereEventBus` for keyed, cancellable script waits when the semantics
-  matter more than raw event throughput.
+- Use `InsereEventBus.subscribe()` for hot keyed script callbacks.
+- Use `waitBusEvent()` for keyed, cancellable script waits when suspension
+  semantics matter more than raw event throughput.
 - Do not model gameplay tick as one task per entity.
 - Keep physics and animation inner loops in plain TypeScript under one host
   task.

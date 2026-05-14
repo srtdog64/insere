@@ -67,6 +67,40 @@ describe("Geukbit scale surfaces", () => {
     expect(host.eventBus.waiters).toBe(0);
   });
 
+  it("routes hot script event subscriptions without Promise waits", () => {
+    const entityCount = 1_000;
+    let delivered = 0;
+    const host = createInsereHostAdapter<
+      unknown,
+      never,
+      { readonly type: "script"; readonly entity: number }
+    >();
+
+    for (let entity = 0; entity < entityCount; entity += 1) {
+      host.api.applyDirect(`entity:${entity}:script:subscribe`, (ctx) => {
+        const unsubscribe = host.eventBus.subscribe(
+          `entity:${entity}`,
+          (event) => {
+            delivered += event.entity;
+          },
+          { signal: ctx.signal }
+        );
+        ctx.onCancel(unsubscribe);
+        ctx.waitFrame();
+      });
+    }
+
+    expect(host.eventBus.listeners).toBe(entityCount);
+
+    for (let entity = 0; entity < entityCount; entity += 1) {
+      expect(host.emitTo(`entity:${entity}`, { type: "script", entity })).toBe(1);
+    }
+
+    expect(delivered).toBe((entityCount * (entityCount - 1)) / 2);
+    expect(host.api.cancelGroup("entity:")).toBe(entityCount);
+    expect(host.eventBus.listeners).toBe(0);
+  });
+
   it("runs gameplay frame continuations for many active entities", () => {
     const entityCount = 5_000;
     const frames = 3;

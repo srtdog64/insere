@@ -154,6 +154,34 @@ async function insereScriptEventBus() {
   await Promise.all(promises);
 }
 
+function mapScriptEventCallbacks() {
+  const listeners = new Map();
+
+  for (let index = 0; index < scriptEvents; index += 1) {
+    listeners.set(`entity:${index}`, (event) => {
+      sink += event.entity;
+    });
+  }
+
+  for (let index = 0; index < scriptEvents; index += 1) {
+    listeners.get(`entity:${index}`)?.({ entity: index });
+  }
+}
+
+function insereScriptEventSubscriptions() {
+  const eventBus = createInsereEventBus();
+
+  for (let index = 0; index < scriptEvents; index += 1) {
+    eventBus.subscribe(`entity:${index}`, (event) => {
+      sink += event.entity;
+    });
+  }
+
+  for (let index = 0; index < scriptEvents; index += 1) {
+    eventBus.emit(`entity:${index}`, { entity: index });
+  }
+}
+
 async function promiseGameplayTick() {
   const frames = 3;
   let promises = [];
@@ -298,6 +326,11 @@ const rows = [
     scenario: "script event bus targeted",
     baseline: await measureAsync("Map keyed Promise bus", scriptEvents, mapScriptEventBus),
     insere: await measureAsync("InsereEventBus", scriptEvents, insereScriptEventBus)
+  },
+  {
+    scenario: "script event bus direct callbacks",
+    baseline: measure("Map keyed callbacks", scriptEvents, mapScriptEventCallbacks),
+    insere: measure("InsereEventBus subscribe", scriptEvents, insereScriptEventSubscriptions)
   },
   {
     scenario: "gameplay tick",

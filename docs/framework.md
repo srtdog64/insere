@@ -71,8 +71,8 @@ Waiting effects are cancellable through the task `AbortSignal`. Cancelling the
 task removes the mailbox waiter.
 
 Use `InsereEventBus` when inbound events have a stable target key, such as
-`entity:{id}` or `script:{id}`. It indexes waiters by key and avoids scanning
-every predicate waiter for targeted script events:
+`entity:{id}` or `script:{id}`. It indexes listeners and waiters by key and
+avoids scanning every predicate waiter for targeted script events:
 
 ```ts
 host.api.applyEffect("entity:42:script:event", function* (ctx) {
@@ -83,8 +83,25 @@ host.api.applyEffect("entity:42:script:event", function* (ctx) {
 host.emitTo("entity:42", { type: "damage", amount: 10 });
 ```
 
+For hot continuous script events, use direct subscriptions instead of Promise
+waits:
+
+```ts
+host.api.applyDirect("entity:42:script:events", (ctx) => {
+  const unsubscribe = host.eventBus.subscribe(
+    "entity:42",
+    (event) => runScript(event),
+    { signal: ctx.signal }
+  );
+
+  ctx.onCancel(unsubscribe);
+  ctx.waitFrame();
+});
+```
+
 Use mailbox predicates for broad host events. Use event bus keys for targeted
-script/entity events.
+script/entity events. Use `waitBusEvent()` only when the task should suspend
+until the next matching event.
 
 ## Supervision
 

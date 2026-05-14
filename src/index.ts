@@ -134,7 +134,9 @@ export {
   InsereEventBus,
   createInsereEventBus,
   waitBusEvent,
+  type InsereEventListener,
   type InsereEventBusOptions,
+  type InsereEventBusSubscribeOptions,
   type InsereEventBusWaitOptions
 } from "./event-bus.js";
 export {

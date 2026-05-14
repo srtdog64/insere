@@ -14,6 +14,7 @@ import {
   InsereEventBus,
   createInsereEventBus,
   waitBusEvent,
+  type InsereEventListener,
   type InsereEventBusOptions
 } from "./event-bus.js";
 import type { InsereEffect } from "./effect.js";
@@ -79,6 +80,13 @@ export class InsereHostAdapter<
 
   waitBusEvent(key: string): InsereEffect<unknown, unknown, TInboundEvent> {
     return waitBusEvent(this.eventBus, key);
+  }
+
+  subscribeTo(
+    key: string,
+    listener: InsereEventListener<TInboundEvent>
+  ): () => void {
+    return this.eventBus.subscribe(key, listener);
   }
 }
 
