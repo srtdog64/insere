@@ -1,0 +1,41 @@
+{
+  "name": "@exornea/insere",
+  "version": "0.1.0",
+  "description": "Cooperative control-flow runtime for frame-aware TypeScript apps.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "default": "./dist/api.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "benchmark",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "benchmark": "npm run build && node benchmark/compare.mjs",
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "pack:check": "npm pack --dry-run",
+    "prebuild": "rimraf dist",
+    "test": "vitest run",
+    "check": "npm run build && npm test && npm run pack:check"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6"
+  }
+}
