@@ -10,7 +10,8 @@ import {
 } from "@exornea/insere/api";
 
 const api = createInsereApi({
-  logger: createConsoleInsereLogger()
+  logger: createConsoleInsereLogger(),
+  requestId: () => editor.currentRequestId
 });
 ```
 
@@ -19,13 +20,33 @@ It is observation only. If a task throws, Insere logs the bug record and then
 rethrows the original error. If a Result API returns `err(error)`, Insere logs
 the bug record and still returns the same Result shape.
 
+## Performance Contract
+
+Logging is designed to be opt-in and cold-path only:
+
+- no `logger`: API-boundary logging returns before reading `requestId`
+- no `logger`: Insere does not build log records
+- no `logger`: Insere does not allocate log `data` objects
+- logger installed: records are built only for bug/failure paths
+- logger installed: `requestId` providers are read only while building a record
+- logger failure: swallowed so logging never hides the original runtime failure
+
+Do not use logging for per-frame tracing or normal task lifecycle telemetry.
+If a host needs high-volume traces, emit those from the host with its own
+sampling/buffering policy. Insere's built-in logging is for bugs and failure
+diagnostics.
+
 ## Record Shape
 
 ```ts
 interface InsereLogRecord {
+  ts: string;
   level: "debug" | "info" | "warn" | "error";
   kind: "bug" | "runtime" | "policy";
   runtime: "api" | "direct" | "effect";
+  stage: string;
+  event: string;
+  requestId?: string;
   operation: string;
   message: string;
   key?: string;
@@ -45,6 +66,23 @@ mean the host adapter or task body has a defect:
 - invalid task specs, such as an empty key
 - uncaught task failures during `tick()` or `runIdle()`
 - failures while cancelling, restarting, or cancelling a group
+
+`requestId` is optional and host-supplied. Pass a string for a stable adapter
+instance id, or a function when the host has a changing request/session id.
+Insere does not use global async context for request ids so the core remains
+portable across browser, Node, and embedded hosts.
+
+Recommended host pattern:
+
+```ts
+const tasks = createInsereHostAdapter({
+  logger: createConsoleInsereLogger(),
+  requestId: () => host.currentRequestId
+});
+```
+
+Avoid global mutable context inside Insere. The host should own request/session
+identity and expose it through the provider.
 
 `skip` is not a bug. It is an expected policy decision and does not log.
 `restart` is not a bug. It is the normal supersession path.

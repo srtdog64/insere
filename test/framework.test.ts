@@ -57,6 +57,32 @@ describe("Insere framework layers", () => {
     expect(events).toEqual([]);
   });
 
+  it("compacts mailbox waiters after abort-heavy cancellation", async () => {
+    const mailbox = createInsereMailbox<number>({ buffer: "queue" });
+    const controllers = Array.from(
+      { length: 256 },
+      () => new AbortController()
+    );
+
+    const waits = controllers.map((controller) =>
+      mailbox.wait(undefined, { signal: controller.signal })
+    );
+    const settled = Promise.allSettled(waits);
+
+    expect(mailbox.waiters).toBe(controllers.length);
+
+    for (const controller of controllers) {
+      controller.abort();
+    }
+
+    expect(mailbox.waiters).toBe(0);
+    expect(mailbox.emit(7)).toBe(0);
+    await expect(mailbox.wait()).resolves.toBe(7);
+    await expect(settled).resolves.toSatisfy(
+      (results) => results.every((result) => result.status === "rejected")
+    );
+  });
+
   it("applies explicit bounded mailbox buffering", async () => {
     const mailbox = createInsereMailbox<number>({
       buffer: "bounded",
@@ -242,6 +268,40 @@ describe("Insere framework layers", () => {
 
     expect(host.frame).toBe(1);
     expect(events).toEqual(["commit"]);
+  });
+
+  it("lets host event bus subscriptions follow external abort signals", () => {
+    const host = createInsereHostAdapter<unknown, never, string>();
+    const controller = new AbortController();
+    const events: string[] = [];
+
+    host.subscribeTo(
+      "entity:1",
+      (event) => events.push(event),
+      { signal: controller.signal }
+    );
+
+    expect(host.emitTo("entity:1", "first")).toBe(1);
+    controller.abort();
+    expect(host.eventBus.listeners).toBe(0);
+    expect(host.emitTo("entity:1", "late")).toBe(0);
+    expect(events).toEqual(["first"]);
+  });
+
+  it("publishes host event bus subscriptions without buffering", async () => {
+    const host = createInsereHostAdapter<unknown, never, string>({
+      eventBus: { buffer: "queue" }
+    });
+    const events: string[] = [];
+
+    host.subscribeTo("entity:1", (event) => events.push(event));
+
+    expect(host.publishTo("entity:1", "direct")).toBe(1);
+    expect(host.publishTo("entity:2", "dropped")).toBe(0);
+    expect(events).toEqual(["direct"]);
+
+    host.emitTo("entity:2", "queued");
+    await expect(host.eventBus.wait("entity:2")).resolves.toBe("queued");
   });
 
   it("exposes AbortSignal I/O convention through abortable effects", () => {

@@ -4,6 +4,11 @@ The framework layer sits above the direct core and generator/effect runtime.
 It is the recommended shape for large hosts such as editors, renderers, and
 game tools.
 
+This layer still exposes a cooperative scheduler, not a standalone task
+runtime. Host applications own rendering, I/O, threads, lifecycle, and the
+clock. Insere provides keyed scheduling, cancellation, event ingress,
+supervision, and logging around that host loop.
+
 ```txt
 host app
   InsereHostAdapter
@@ -97,11 +102,18 @@ host.api.applyDirect("entity:42:script:events", (ctx) => {
   ctx.onCancel(unsubscribe);
   ctx.waitFrame();
 });
+
+host.publishTo("entity:42", { type: "damage", amount: 10 });
 ```
 
 Use mailbox predicates for broad host events. Use event bus keys for targeted
 script/entity events. Use `waitBusEvent()` only when the task should suspend
 until the next matching event.
+
+`emitTo()` is the full event-bus path: it delivers listeners, resumes keyed
+waiters, and applies buffering when nobody receives the event. `publishTo()` is
+the listener-only hot path: it delivers subscriptions and never touches
+waiters or buffers.
 
 ## Supervision
 

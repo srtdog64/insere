@@ -1,10 +1,10 @@
 # Insere
 
-Cooperative control-flow runtime for frame-aware TypeScript apps.
+Small cooperative scheduler for frame-aware TypeScript apps.
 
-Insere is not a Promise replacement. It is a small runtime for keyed,
-cancellable, explicitly scheduled work that should run with an editor, game, or
-renderer clock.
+Insere is not a Promise replacement, worker pool, or general task runtime. It
+is a small cooperative scheduler for keyed, cancellable, explicitly scheduled
+work that should run with an editor, game, or renderer clock.
 
 ```txt
 inserere = in + serere
@@ -92,6 +92,10 @@ api.tick(performance.now());
 
 ## Model
 
+Insere is a scheduler, not an executor. It never owns threads, CPU parallelism,
+I/O execution, or background work. The host owns the clock and calls `tick(now)`;
+Insere only advances work that has explicitly yielded back to that host clock.
+
 - A direct task is a keyed callback over the host clock.
 - A routine is a generator.
 - A routine yields scheduling instructions.
@@ -126,7 +130,8 @@ Effect helpers cover the small composition surface:
 - facade API: `createInsereApi`, `InsereApi`, and `InsereApiScope` from
   `@exornea/insere/api`
 - structured host logging: `logger`, `createConsoleInsereLogger`, and
-  `createBufferedInsereLogger` for bug records at the API boundary
+  `createBufferedInsereLogger` for bug records at the API boundary; disabled
+  logging is a fast no-op and does not read `requestId`
 - framework layer: `createInsereHostAdapter`, `InsereMailbox`, `waitEvent`,
   and explicit supervision policy for large host applications
 
@@ -147,6 +152,7 @@ Good fits:
 Poor fits:
 
 - replacing `async` / `await`
+- pretending to be a full task runtime
 - CPU parallelism
 - worker pools
 - general job queues
@@ -163,12 +169,10 @@ composition.
 See [`docs/api.md`](docs/api.md) for the host-facing facade design.
 
 See [`docs/logging.md`](docs/logging.md) for structured bug logging.
+It covers `requestId` propagation and the no-logger fast path.
 
 See [`docs/framework.md`](docs/framework.md) for mailbox, supervision, host
 adapter, and AbortSignal I/O conventions.
-
-See [`docs/geukbit-adoption.md`](docs/geukbit-adoption.md) for the Geukbit
-integration gate and first dogfood slice.
 
 See [`docs/performance.md`](docs/performance.md) for the current benchmark
 against plain TypeScript/JavaScript baselines.

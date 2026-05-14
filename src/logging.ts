@@ -5,18 +5,22 @@ export type InsereLogKind = "bug" | "runtime" | "policy";
 export type InsereLogRuntime = "api" | "direct" | "effect";
 
 export interface InsereLogRecord {
+  readonly ts: string;
   readonly level: InsereLogLevel;
   readonly kind: InsereLogKind;
   readonly runtime: InsereLogRuntime;
+  readonly stage: string;
+  readonly event: string;
+  readonly requestId?: string | undefined;
   readonly operation: string;
   readonly message: string;
-  readonly key?: string;
-  readonly policy?: string;
-  readonly frame?: number;
-  readonly now?: number;
-  readonly delta?: number;
-  readonly cause?: unknown;
-  readonly data?: Readonly<Record<string, unknown>>;
+  readonly key?: string | undefined;
+  readonly policy?: string | undefined;
+  readonly frame?: number | undefined;
+  readonly now?: number | undefined;
+  readonly delta?: number | undefined;
+  readonly cause?: unknown | undefined;
+  readonly data?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export type InsereLogger = (record: InsereLogRecord) => void;
@@ -24,15 +28,18 @@ export type InsereLogger = (record: InsereLogRecord) => void;
 export interface InsereBugLogOptions {
   readonly logger?: InsereLogger;
   readonly runtime?: InsereLogRuntime;
+  readonly stage: string;
+  readonly event: string;
+  readonly requestId?: string | undefined;
   readonly operation: string;
   readonly cause: unknown;
-  readonly key?: string;
-  readonly policy?: string;
-  readonly frame?: number;
-  readonly now?: number;
-  readonly delta?: number;
-  readonly message?: string;
-  readonly data?: Readonly<Record<string, unknown>>;
+  readonly key?: string | undefined;
+  readonly policy?: string | undefined;
+  readonly frame?: number | undefined;
+  readonly now?: number | undefined;
+  readonly delta?: number | undefined;
+  readonly message?: string | undefined;
+  readonly data?: Readonly<Record<string, unknown>> | undefined;
 }
 
 export interface BufferedInsereLogger {
@@ -56,14 +63,18 @@ export function logInsereBug(options: InsereBugLogOptions): void {
   }
 
   const record: InsereLogRecord = {
+    ts: new Date().toISOString(),
     level: "error",
     kind: "bug",
     runtime: options.runtime ?? "api",
+    stage: options.stage,
+    event: options.event,
     operation: options.operation,
     message:
       options.message ??
       `Insere bug while running ${options.operation}.`,
     cause: options.cause,
+    ...(options.requestId !== undefined ? { requestId: options.requestId } : {}),
     ...(options.key !== undefined ? { key: options.key } : {}),
     ...(options.policy !== undefined ? { policy: options.policy } : {}),
     ...(options.frame !== undefined ? { frame: options.frame } : {}),
@@ -116,10 +127,6 @@ export function createConsoleInsereLogger(
           ? target.warn ?? target.error
           : target.info ?? target.log ?? target.error;
 
-    write.call(
-      target,
-      `[insere:${record.kind}] ${record.operation}: ${record.message}`,
-      record
-    );
+    write.call(target, JSON.stringify(record));
   };
 }

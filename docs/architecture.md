@@ -1,7 +1,12 @@
 # Insere Architecture
 
-Insere is a cooperative scheduler for TypeScript applications that need public
-control flow.
+Insere is a small cooperative scheduler for TypeScript applications that need
+public control flow.
+
+It is not a full task runtime. It does not execute work independently, own
+threads, run worker pools, or hide background scheduling. The host owns the
+clock and execution environment; Insere only coordinates keyed work that
+cooperatively yields through frame, delay, idle, or Promise-bridge waits.
 
 It intentionally sits below `async` / `await` for frame-sensitive work:
 
@@ -81,12 +86,67 @@ composition and typed effect helpers matter more than raw scheduling cost.
 
 ## Non-Goals
 
+- no full task runtime identity
 - no Promise replacement
 - no worker pool
 - no preemptive threading
+- no CPU parallelism
+- no general job queue
 - no hidden retry or scheduling policy; task policy is explicit at application
   boundaries
 - no renderer, editor, or engine ownership
+- no dependency injection container (see below)
+
+## No Dependency Injection
+
+Insere intentionally ships without a DI container (no `Layer`, no `Context.Tag`,
+no scoped service overrides). Reasons:
+
+1. **Out of scope.** Insere positions itself below `async`/`await` as a
+   frame-clock task scheduler. A DI system is a framework concern. Adding it
+   pulls Insere into application-architecture territory and dilutes the
+   "thin layer over the host loop" identity.
+2. **Closure capture is sufficient.** Routines are functions, so host services
+   are injected by lexical capture at task-construction time. Tests substitute
+   services by passing different captures. No tag/lookup machinery required.
+3. **`dispatch` and `getState` already cover the core seam.** Routines reach
+   host state through these two hooks, set on `Insere`/`DirectInsereTask`/`InsereApi`
+   construction. That is the entire host-routine boundary by design.
+4. **Target domain rarely needs runtime service swap.** Editors, games, and
+   renderers tend to have singleton subsystems (renderer, asset loader, scene
+   store) tied to host lifetime, not per-task scope. Per-routine service
+   override is not a common pattern in this domain.
+5. **Type and runtime cost.** A typed DI surface (à la `Effect<R, E, A>`)
+   would require tracking requirements in the routine type, breaking the
+   current `(ctx) => Generator<Instruction, T>` signature. A runtime-only DI
+   surface adds Map lookups to every service access and is no safer than
+   closure capture.
+6. **Slippery slope.** A minimal `tag → service` registry is easy to add but
+   leads to demands for scoped overrides, layered defaults, and lifecycle
+   management. Each step further from the current focus. Easier to refuse at
+   the first step.
+
+**Recommended pattern.** Capture services in the factory closure:
+
+```ts
+function buildAutosaveTask(deps: { db: Db; clock: Clock }) {
+  return function* autosave(ctx: InsereContext) {
+    yield delay(deps.clock.intervalMs);
+    yield fromPromise(deps.db.write(ctx.getState()));
+  };
+}
+
+api.applyEffect("autosave", buildAutosaveTask({ db, clock }));
+```
+
+For tests, pass a different `deps` object. For runtime substitution, rebuild
+and `restart`. This pattern composes cleanly with `task()`, `directTask()`,
+and `InsereTaskScope` without introducing a new container abstraction.
+
+If a future use case truly cannot be served by closure capture, the smallest
+acceptable addition would be a single `runtime.register(tag, service)` /
+`ctx.use(tag)` pair with no scoping or lifecycle. Anything beyond that is a
+non-goal.
 
 ## Naming
 

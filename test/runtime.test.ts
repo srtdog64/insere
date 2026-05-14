@@ -303,6 +303,14 @@ describe("Insere", () => {
     expect(events).toEqual([]);
   });
 
+  it("rejects empty restart keys", () => {
+    const insere = new Insere();
+
+    expect(() => insere.restart("", function* () {
+      yield frame();
+    })).toThrow("Insere routine key must not be empty.");
+  });
+
   it("does not let failure reporters prevent routine cleanup", () => {
     const insere = new Insere({
       onFailure: () => {

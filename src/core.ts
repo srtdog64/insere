@@ -367,7 +367,11 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         return runtime.#delta;
       },
       get signal() {
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
         entry.controller ??= new AbortController();
 
         if (entry.aborted) {
@@ -379,7 +383,10 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       dispatch: (event) => this.#dispatch(event),
       getState: () => this.#getState(),
       onCancel: (cleanup) => {
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
 
         if (!entry.finalizers) {
           entry.finalizers = cleanup;
@@ -401,25 +408,43 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         };
       },
       throwIfCancelled: () => {
-        if (runtime.#requireActiveEntry().aborted) {
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
+        if (entry.aborted) {
           throw new DOMException("DirectInsereTask was cancelled.", "AbortError");
         }
       },
       waitFrame: () => {
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
         entry.wait = "frame";
         entry.waitFrame = this.#frame;
         runtime.#queueFrame(entry);
       },
       waitIdle: () => {
-        runtime.#requireActiveEntry().wait = "idle";
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
+        entry.wait = "idle";
       },
       sleep: (ms) => {
         if (!Number.isFinite(ms) || ms < 0) {
           throw new RangeError(`Invalid sleep: ${ms}`);
         }
 
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
         entry.wait = "delay";
         entry.wakeAt = this.#now + ms;
       },
@@ -428,12 +453,21 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
           throw new RangeError(`Invalid wake time: ${time}`);
         }
 
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
         entry.wait = "delay";
         entry.wakeAt = time;
       },
       complete: () => {
-        runtime.#requireActiveEntry().wait = "done";
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("DirectInsereTask context is only valid while a task is running.");
+        }
+
+        entry.wait = "done";
       }
     };
   }
@@ -644,14 +678,6 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
     }
   }
 
-  #requireActiveEntry(): Entry<TState, TEvent> {
-    if (!this.#activeEntry) {
-      throw new Error("DirectInsereTask context is only valid while a task is running.");
-    }
-
-    return this.#activeEntry;
-  }
-
   #reportFailure(
     entry: Entry<TState, TEvent>,
     wait: DirectInsereWaitKind,
@@ -659,6 +685,9 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   ): void {
     try {
       this.#onFailure?.({
+        code: "RUNTIME_ERROR",
+        message: cause instanceof Error ? cause.message : String(cause),
+        stage: "Runtime",
         runtime: "direct",
         operation: "task",
         key: entry.key,

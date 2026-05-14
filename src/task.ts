@@ -1,6 +1,7 @@
 import {
   err,
   ok,
+  toAppError,
   toRoutine,
   type InsereEffect,
   type InsereResult
@@ -23,10 +24,8 @@ export interface InsereTaskApplyReport {
   readonly status: InsereTaskApplyStatus;
 }
 
-export type InsereTaskApplyResult = InsereResult<
-  InsereTaskApplyReport,
-  unknown
->;
+export type InsereTaskApplyResult = InsereResult<InsereTaskApplyReport>;
+
 
 export interface InsereTask<TState = unknown, TEvent = unknown, TValue = unknown> {
   readonly key: string;
@@ -72,6 +71,84 @@ function taskApplyReport(
     status
   };
 }
+
+function taskApplyError(
+  error: unknown,
+  key: string,
+  policy: InsereTaskPolicy
+): InsereTaskApplyResult {
+  const code =
+    error instanceof Error && error.message.includes("already exists")
+      ? "TASK_ALREADY_EXISTS"
+      : "RUNTIME_ERROR";
+
+  return err(toAppError(error, "ApplyTask", code, {
+    key,
+    policy
+  }));
+}
+
+type EffectTaskPolicyHandler = <TState, TEvent, TValue>(
+  runtime: Insere<TState, TEvent>,
+  item: InsereTask<TState, TEvent, TValue>,
+  policy: InsereTaskPolicy
+) => InsereTaskApplyResult;
+
+const EFFECT_TASK_POLICIES: Record<InsereTaskPolicy, EffectTaskPolicyHandler> = {
+  spawn(runtime, item, policy) {
+    spawnTask(runtime, item);
+    return ok(taskApplyReport(item.key, policy, true, "started"));
+  },
+  restart(runtime, item, policy) {
+    const taskExisted = runtime.has(item.key);
+    restartTask(runtime, item);
+    return ok(taskApplyReport(
+      item.key,
+      policy,
+      true,
+      taskExisted ? "restarted" : "started"
+    ));
+  },
+  skip(runtime, item, policy) {
+    if (runtime.has(item.key)) {
+      return ok(taskApplyReport(item.key, policy, false, "skipped"));
+    }
+
+    spawnTask(runtime, item);
+    return ok(taskApplyReport(item.key, policy, true, "started"));
+  }
+};
+
+type DirectTaskPolicyHandler = <TState, TEvent>(
+  runtime: DirectInsereTaskRuntime<TState, TEvent>,
+  item: DirectInsereTaskSpec<TState, TEvent>,
+  policy: InsereTaskPolicy
+) => InsereTaskApplyResult;
+
+const DIRECT_TASK_POLICIES: Record<InsereTaskPolicy, DirectTaskPolicyHandler> = {
+  spawn(runtime, item, policy) {
+    spawnDirectTask(runtime, item);
+    return ok(taskApplyReport(item.key, policy, true, "started"));
+  },
+  restart(runtime, item, policy) {
+    const taskExisted = runtime.has(item.key);
+    restartDirectTask(runtime, item);
+    return ok(taskApplyReport(
+      item.key,
+      policy,
+      true,
+      taskExisted ? "restarted" : "started"
+    ));
+  },
+  skip(runtime, item, policy) {
+    if (runtime.has(item.key)) {
+      return ok(taskApplyReport(item.key, policy, false, "skipped"));
+    }
+
+    spawnDirectTask(runtime, item);
+    return ok(taskApplyReport(item.key, policy, true, "started"));
+  }
+};
 
 export function task<TState, TEvent, TValue>(
   key: string,
@@ -140,29 +217,9 @@ export function applyTaskResult<TState, TEvent, TValue>(
   policy: InsereTaskPolicy = item.policy ?? "restart"
 ): InsereTaskApplyResult {
   try {
-    switch (policy) {
-      case "spawn":
-        spawnTask(runtime, item);
-        return ok(taskApplyReport(item.key, policy, true, "started"));
-      case "restart":
-        const taskExisted = runtime.has(item.key);
-        restartTask(runtime, item);
-        return ok(taskApplyReport(
-          item.key,
-          policy,
-          true,
-          taskExisted ? "restarted" : "started"
-        ));
-      case "skip":
-        if (runtime.has(item.key)) {
-          return ok(taskApplyReport(item.key, policy, false, "skipped"));
-        }
-
-        spawnTask(runtime, item);
-        return ok(taskApplyReport(item.key, policy, true, "started"));
-    }
+    return EFFECT_TASK_POLICIES[policy](runtime, item, policy);
   } catch (error) {
-    return err(error);
+    return taskApplyError(error, item.key, policy);
   }
 }
 
@@ -218,29 +275,9 @@ export function applyDirectTaskResult<TState, TEvent>(
   policy: InsereTaskPolicy = item.policy ?? "restart"
 ): InsereTaskApplyResult {
   try {
-    switch (policy) {
-      case "spawn":
-        spawnDirectTask(runtime, item);
-        return ok(taskApplyReport(item.key, policy, true, "started"));
-      case "restart":
-        const taskExisted = runtime.has(item.key);
-        restartDirectTask(runtime, item);
-        return ok(taskApplyReport(
-          item.key,
-          policy,
-          true,
-          taskExisted ? "restarted" : "started"
-        ));
-      case "skip":
-        if (runtime.has(item.key)) {
-          return ok(taskApplyReport(item.key, policy, false, "skipped"));
-        }
-
-        spawnDirectTask(runtime, item);
-        return ok(taskApplyReport(item.key, policy, true, "started"));
-    }
+    return DIRECT_TASK_POLICIES[policy](runtime, item, policy);
   } catch (error) {
-    return err(error);
+    return taskApplyError(error, item.key, policy);
   }
 }
 

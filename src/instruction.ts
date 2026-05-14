@@ -1,11 +1,30 @@
-export type InsereInstruction<TResume = unknown> =
-  | { readonly kind: "frame" }
-  | { readonly kind: "idle" }
-  | { readonly kind: "delay"; readonly ms: number }
-  | { readonly kind: "promise"; readonly promise: Promise<TResume> };
+export const INSERE_INSTRUCTION_FRAME = 0;
+export const INSERE_INSTRUCTION_IDLE = 1;
+export const INSERE_INSTRUCTION_DELAY = 2;
+export const INSERE_INSTRUCTION_PROMISE = 3;
 
-const FRAME_INSTRUCTION: InsereInstruction = { kind: "frame" };
-const IDLE_INSTRUCTION: InsereInstruction = { kind: "idle" };
+export type InsereInstruction<TResume = unknown> =
+  | { readonly kind: "frame"; readonly op?: typeof INSERE_INSTRUCTION_FRAME }
+  | { readonly kind: "idle"; readonly op?: typeof INSERE_INSTRUCTION_IDLE }
+  | {
+      readonly kind: "delay";
+      readonly op?: typeof INSERE_INSTRUCTION_DELAY;
+      readonly ms: number;
+    }
+  | {
+      readonly kind: "promise";
+      readonly op?: typeof INSERE_INSTRUCTION_PROMISE;
+      readonly promise: Promise<TResume>;
+    };
+
+const FRAME_INSTRUCTION: InsereInstruction = {
+  kind: "frame",
+  op: INSERE_INSTRUCTION_FRAME
+};
+const IDLE_INSTRUCTION: InsereInstruction = {
+  kind: "idle",
+  op: INSERE_INSTRUCTION_IDLE
+};
 
 export function frame(): InsereInstruction {
   return FRAME_INSTRUCTION;
@@ -20,11 +39,11 @@ export function delay(ms: number): InsereInstruction {
     throw new RangeError(`Invalid delay: ${ms}`);
   }
 
-  return { kind: "delay", ms };
+  return { kind: "delay", op: INSERE_INSTRUCTION_DELAY, ms };
 }
 
 export function fromPromise<TValue>(
   promise: Promise<TValue>
 ): InsereInstruction<TValue> {
-  return { kind: "promise", promise };
+  return { kind: "promise", op: INSERE_INSTRUCTION_PROMISE, promise };
 }

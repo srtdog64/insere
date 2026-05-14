@@ -214,6 +214,51 @@ describe("InsereApi", () => {
     });
   });
 
+  it("propagates host request ids into bug logs", () => {
+    const logs = createBufferedInsereLogger();
+    let requestId = "req-1";
+    const api = createInsereApi({
+      logger: logs.logger,
+      requestId: () => requestId
+    });
+
+    api.applyEffect("shared", sleep(10));
+    api.applyDirectResult(
+      "shared",
+      (ctx) => ctx.complete(),
+      "spawn",
+      "frame"
+    );
+    requestId = "req-2";
+    api.applyEffectResult("", sleep(1), "restart");
+
+    expect(logs.records.map((record) => record.requestId)).toEqual([
+      "req-1",
+      "req-2"
+    ]);
+  });
+
+  it("does not call request id providers when logging is disabled", () => {
+    let reads = 0;
+    const api = createInsereApi({
+      requestId: () => {
+        reads += 1;
+        return "req";
+      }
+    });
+
+    api.applyEffect("shared", sleep(10));
+    const result = api.applyDirectResult(
+      "shared",
+      (ctx) => ctx.complete(),
+      "spawn",
+      "frame"
+    );
+
+    expect(result.ok).toBe(false);
+    expect(reads).toBe(0);
+  });
+
   it("logs invalid task specs returned through Result APIs", () => {
     const logs = createBufferedInsereLogger();
     const api = createInsereApi({ logger: logs.logger });

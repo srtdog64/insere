@@ -3,7 +3,8 @@ export {
   InsereApiScope,
   createInsereApi,
   type InsereApiOptions,
-  type InsereApiSnapshot
+  type InsereApiSnapshot,
+  type InsereRequestIdProvider
 } from "./api.js";
 export {
   createBufferedInsereLogger,
@@ -53,6 +54,7 @@ export {
   acquireUseRelease,
   abortable,
   access,
+  appError,
   asyncEffect,
   awaitPromise,
   checkCancellation,
@@ -70,6 +72,7 @@ export {
   forEach,
   getState,
   map,
+  isAppError,
   isErr,
   isOk,
   matchResult,
@@ -83,6 +86,7 @@ export {
   succeed,
   sync,
   tap,
+  toAppError,
   toRoutine,
   unless,
   when,
@@ -90,9 +94,13 @@ export {
   waitFrame,
   waitFrames,
   waitIdle,
+  type AppError,
+  type AppErrorOptions,
+  type ErrorCode,
   type InsereEffect,
   type InsereEffectRoutine,
-  type InsereResult
+  type InsereResult,
+  type Stage
 } from "./effect.js";
 export {
   DirectInsereTaskScope,

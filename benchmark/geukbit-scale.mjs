@@ -178,7 +178,7 @@ function insereScriptEventSubscriptions() {
   }
 
   for (let index = 0; index < scriptEvents; index += 1) {
-    eventBus.emit(`entity:${index}`, { entity: index });
+    eventBus.publish(`entity:${index}`, { entity: index });
   }
 }
 
@@ -330,7 +330,7 @@ const rows = [
   {
     scenario: "script event bus direct callbacks",
     baseline: measure("Map keyed callbacks", scriptEvents, mapScriptEventCallbacks),
-    insere: measure("InsereEventBus subscribe", scriptEvents, insereScriptEventSubscriptions)
+    insere: measure("InsereEventBus publish", scriptEvents, insereScriptEventSubscriptions)
   },
   {
     scenario: "gameplay tick",

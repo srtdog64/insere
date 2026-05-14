@@ -15,9 +15,11 @@ import {
   createInsereEventBus,
   waitBusEvent,
   type InsereEventListener,
-  type InsereEventBusOptions
+  type InsereEventBusOptions,
+  type InsereEventBusSubscribeOptions
 } from "./event-bus.js";
-import type { InsereEffect } from "./effect.js";
+import type { InsereEffect, InsereResult } from "./effect.js";
+
 
 export interface InsereHostAdapterOptions<
   TState = unknown,
@@ -56,12 +58,12 @@ export class InsereHostAdapter<
     return this.api.delta;
   }
 
-  tick(now: number): void {
-    this.api.tick(now);
+  tick(now: number): InsereResult<void> {
+    return this.api.tick(now);
   }
 
-  runIdle(): void {
-    this.api.runIdle();
+  runIdle(): InsereResult<void> {
+    return this.api.runIdle();
   }
 
   emit(event: TInboundEvent): number {
@@ -78,15 +80,20 @@ export class InsereHostAdapter<
     return this.eventBus.emit(key, event);
   }
 
+  publishTo(key: string, event: TInboundEvent): number {
+    return this.eventBus.publish(key, event);
+  }
+
   waitBusEvent(key: string): InsereEffect<unknown, unknown, TInboundEvent> {
     return waitBusEvent(this.eventBus, key);
   }
 
   subscribeTo(
     key: string,
-    listener: InsereEventListener<TInboundEvent>
+    listener: InsereEventListener<TInboundEvent>,
+    options?: InsereEventBusSubscribeOptions
   ): () => void {
-    return this.eventBus.subscribe(key, listener);
+    return this.eventBus.subscribe(key, listener, options);
   }
 }
 

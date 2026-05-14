@@ -19,56 +19,152 @@ export type InsereEffect<
   TValue = void
 > = (context: InsereContext<TState, TEvent>) => InsereEffectRoutine<TValue>;
 
-export type InsereResult<TValue, TError = unknown> =
-  | { readonly ok: true; readonly value: TValue }
-  | { readonly ok: false; readonly error: TError };
+export type Stage =
+  | "Init"
+  | "Tick"
+  | "ApplyTask"
+  | "Spawn"
+  | "Restart"
+  | "Cancel"
+  | "Supervise"
+  | "Effect"
+  | "Instruction"
+  | "Runtime";
 
-export function ok<TValue>(value: TValue): InsereResult<TValue, never> {
+export type ErrorCode =
+  | "VALIDATION_FAILED"
+  | "TASK_ALREADY_EXISTS"
+  | "TASK_NOT_FOUND"
+  | "RUNTIME_ERROR"
+  | "SUPERVISION_FAILED"
+  | "CANCELLED"
+  | "UNEXPECTED_EXCEPTION";
+
+
+export interface AppError {
+  readonly code: ErrorCode;
+  readonly message: string;
+  readonly stage: Stage;
+  readonly retryable?: boolean;
+  readonly cause?: unknown;
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+export interface AppErrorOptions {
+  readonly retryable?: boolean;
+  readonly cause?: unknown;
+  readonly meta?: Readonly<Record<string, unknown>>;
+}
+
+export function appError(
+  code: ErrorCode,
+  message: string,
+  stage: Stage,
+  options: AppErrorOptions = {}
+): AppError {
+  const error: AppError = {
+    code,
+    message,
+    stage,
+    ...(options.retryable !== undefined ? { retryable: options.retryable } : {}),
+    ...(options.cause !== undefined ? { cause: options.cause } : {}),
+    ...(options.meta !== undefined ? { meta: options.meta } : {})
+  };
+
+  Object.defineProperty(error, "toString", {
+    value() {
+      return message;
+    }
+  });
+
+  return error;
+}
+
+export function isAppError(error: unknown): error is AppError {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const candidate = error as Partial<AppError>;
+  return (
+    typeof candidate.code === "string" &&
+    typeof candidate.message === "string" &&
+    typeof candidate.stage === "string"
+  );
+}
+
+export function toAppError(
+  error: unknown,
+  stage: Stage = "Runtime",
+  code: ErrorCode = "UNEXPECTED_EXCEPTION",
+  meta?: Readonly<Record<string, unknown>>
+): AppError {
+  if (isAppError(error)) {
+    return error;
+  }
+
+  return appError(
+    code,
+    error instanceof Error ? error.message : String(error),
+    stage,
+    {
+      cause: error,
+      ...(meta !== undefined ? { meta } : {})
+    }
+  );
+}
+
+export type InsereResult<TValue> =
+  | { readonly ok: true; readonly value: TValue }
+  | { readonly ok: false; readonly error: AppError };
+
+
+export function ok<TValue>(value: TValue): InsereResult<TValue> {
   return { ok: true, value };
 }
 
-export function err<TError>(error: TError): InsereResult<never, TError> {
+export function err<TValue = never>(error: AppError): InsereResult<TValue> {
   return { ok: false, error };
 }
 
-export function isOk<TValue, TError>(
-  result: InsereResult<TValue, TError>
+export function isOk<TValue>(
+  result: InsereResult<TValue>
 ): result is { readonly ok: true; readonly value: TValue } {
   return result.ok;
 }
 
-export function isErr<TValue, TError>(
-  result: InsereResult<TValue, TError>
-): result is { readonly ok: false; readonly error: TError } {
+export function isErr<TValue>(
+  result: InsereResult<TValue>
+): result is { readonly ok: false; readonly error: AppError } {
   return !result.ok;
 }
 
-export function matchResult<TValue, TError, TNext>(
-  result: InsereResult<TValue, TError>,
+export function matchResult<TValue, TNext>(
+  result: InsereResult<TValue>,
   cases: {
     readonly ok: (value: TValue) => TNext;
-    readonly err: (error: TError) => TNext;
+    readonly err: (error: AppError) => TNext;
   }
 ): TNext;
-export function matchResult<TValue, TError, TNext>(
-  result: InsereResult<TValue, TError>,
+export function matchResult<TValue, TNext>(
+  result: InsereResult<TValue>,
   onOk: (value: TValue) => TNext,
-  onErr: (error: TError) => TNext
+  onErr: (error: AppError) => TNext
 ): TNext;
-export function matchResult<TValue, TError, TNext>(
-  result: InsereResult<TValue, TError>,
+export function matchResult<TValue, TNext>(
+  result: InsereResult<TValue>,
   casesOrOnOk:
     | {
         readonly ok: (value: TValue) => TNext;
-        readonly err: (error: TError) => TNext;
+        readonly err: (error: AppError) => TNext;
       }
     | ((value: TValue) => TNext),
-  onErr?: (error: TError) => TNext
+  onErr?: (error: AppError) => TNext
 ): TNext {
   if (typeof casesOrOnOk === "function") {
     return result.ok
       ? casesOrOnOk(result.value)
-      : (onErr as (error: TError) => TNext)(result.error);
+      : (onErr as (error: AppError) => TNext)(result.error);
   }
 
   return result.ok
@@ -268,7 +364,7 @@ export function attempt<TState, TEvent, TValue>(
     try {
       return ok(yield* source(context));
     } catch (error) {
-      return err(error);
+      return err(toAppError(error, "Effect"));
     }
   };
 }

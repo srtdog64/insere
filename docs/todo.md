@@ -3,6 +3,10 @@
 This document tracks design work that should stay in Insere, not in a single
 host application such as Geukbit.
 
+Insere's product boundary is a small cooperative scheduler. Avoid pulling it
+toward a full task runtime, worker pool, dependency container, or general job
+queue.
+
 ## Current Fit For Geukbit
 
 The current runtime is enough for the first Geukbit composition layer:
@@ -62,14 +66,14 @@ These items are now designed and implemented in the core API:
 - Structured logging: `InsereLogger`, `InsereLogRecord`,
   `createConsoleInsereLogger`, `createBufferedInsereLogger`, and API-boundary
   bug logging for duplicate spawn, invalid task specs, uncaught task failures,
-  and cancellation/restart failures.
+  cancellation/restart failures, and host-provided `requestId` trace ids.
 - Framework layer: `InsereHostAdapter`, `InsereMailbox`, `waitEvent`,
-  `InsereEventBus`, `waitBusEvent`, `abortable`, and explicit supervision
-  policy with `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`,
-  and bounded `restart`.
-- Geukbit adoption gate: `docs/geukbit-adoption.md` documents key conventions,
-  event ingress, failure policy, I/O convention, verification commands, and the
-  first dogfood slice.
+  `InsereEventBus`, `waitBusEvent`, listener-only `publish`, `abortable`, and
+  explicit supervision policy with `bubble`, `logAndStop`, `dispatchAndStop`,
+  `convertToResult`, and bounded `restart`.
+- Throw boundary audit: `docs/throw-boundaries.md` documents which APIs must
+  return `InsereResult` and which low-level/runtime boundaries intentionally
+  throw.
 
 ## Performance Baseline
 
@@ -80,22 +84,22 @@ Current local result, measured on 2026-05-14 with Node `v22.17.0` and
 
 - Direct restart storm is about 149.73x faster than a Promise+Map+Abort
   latest-only implementation.
-- Direct frame continuation for 10k already-waiting tasks is about 3.14x faster
+- Direct frame continuation for 10k already-waiting tasks is about 3.1x faster
   than `async`/`await Promise.resolve` continuation flushing.
-- Direct `cancelGroup("asset:")` for 10k keyed tasks is about 338.54x faster
-  than Map+AbortController cancellation and completed in 0.28ms.
+- Direct `cancelGroup("asset:")` for 10k keyed tasks is about 444.58x faster
+  than Map+AbortController cancellation and completed in 0.17ms.
 - Direct mixed `cancelGroup("asset:")` with `preview:` tasks also present is
-  about 91.22x faster and completed in 0.68ms through the group index.
-- Generator `Insere` frame routine is about 1.28x faster than the Promise frame
+  about 65.48x faster and completed in 0.56ms through the group index.
+- Generator `Insere` frame routine is about 1.23x faster than the Promise frame
   continuation baseline in the reference benchmark.
-- Direct value branching is about 1.57x faster than `InsereResult ok/match`.
-- `InsereMailbox` fanout is about 1.87x slower than a simple EventTarget
-  once-listener Promise baseline. Mailbox is for typed matching, buffering
-  policy, and cancellation cleanup, not high-volume event fanout.
+- Direct value branching is about 1.37x faster than `InsereResult ok/match`.
+- `InsereMailbox` fanout is near parity with a simple EventTarget once-listener
+  Promise baseline and may win or lose depending on run variance. Mailbox is
+  for typed matching, buffering policy, and cancellation cleanup.
 - Geukbit scale benchmark shows lifecycle cancel and projection restart are
-  strong fits, hot script event subscription is about 1.2x slower than raw Map
-  callbacks, Promise-style script waits are slower, and per-entity gameplay
-  task scheduling is not a good fit.
+  strong fits, hot script event publish is near parity with raw Map callbacks,
+  Promise-style script waits are slightly slower, and per-entity gameplay task
+  scheduling is not a good fit.
 
 Design conclusion:
 

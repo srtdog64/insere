@@ -5,6 +5,10 @@
 The root package still exports the lower-level building blocks, but application
 adapters should usually start from the API facade:
 
+The API facade is a scheduler facade, not an executor facade. It gives a host
+one key space, one clock, policy Result reports, and supervision hooks over the
+direct and effect schedulers. It does not run work outside the host tick.
+
 ```ts
 import { createInsereApi } from "@exornea/insere/api";
 
@@ -16,6 +20,22 @@ editor.applyEffectResult("autosave", autosaveEffect, "skip");
 
 api.tick(performance.now());
 ```
+
+Hosts can attach request/session trace ids to bug logs without using global
+context:
+
+```ts
+const api = createInsereApi({
+  dispatch,
+  getState,
+  logger,
+  requestId: () => host.currentRequestId
+});
+```
+
+The provider is lazy. It is called only when a logger exists and Insere is
+building a failure record. A host can leave `requestId` wired in production
+without adding cost to normal successful scheduling paths.
 
 Pass `logger` when the host wants structured bug records:
 
@@ -89,12 +109,21 @@ Result methods exist for host adapters:
 const result = api.applyDirectResult("autosave", step, "skip", "frame");
 ```
 
+`tick(now)` and `runIdle()` also return `InsereResult<void>` from the API
+facade and host adapter. With the default `bubble` supervision they still
+rethrow uncaught task failures after logging. Use `logAndStop`,
+`dispatchAndStop`, or `convertToResult` when the host wants non-throwing
+runtime failure handling.
+
+See [`throw-boundaries.md`](throw-boundaries.md) for the exact Result and
+intentional throw boundaries.
+
 When a logger is installed, duplicate `spawn`, invalid task specs, uncaught
 task failures, and cancellation failures also emit `kind: "bug"` records.
 `skip` and normal `restart` decisions do not log.
 
-See [`logging.md`](logging.md) for the full record shape and bug logging
-contract.
+See [`logging.md`](logging.md) for the full record shape, bug logging contract,
+and zero-work disabled logging behavior.
 
 Supervision is separate from task policy. Task policy controls how work starts;
 supervision controls what happens after uncaught failure. The API facade
@@ -110,8 +139,25 @@ type InsereTaskApplyResult = InsereResult<{
   policy: "spawn" | "restart" | "skip";
   applied: boolean;
   status: "started" | "restarted" | "skipped";
-}, unknown>;
+}>;
 ```
+
+`InsereResult` errors are structured `AppError` values:
+
+```ts
+type AppError = {
+  code: ErrorCode;
+  message: string;
+  stage: Stage;
+  retryable?: boolean;
+  cause?: unknown;
+  meta?: Readonly<Record<string, unknown>>;
+};
+```
+
+Use `appError()` or `toAppError()` when host adapters convert external
+exceptions into Result values. `String(error)` returns the error message for
+ergonomic logging, while `code`, `stage`, and `meta` stay available for policy.
 
 ## Choosing Direct vs Effect
 

@@ -1,4 +1,10 @@
-import type { InsereInstruction } from "./instruction.js";
+import {
+  INSERE_INSTRUCTION_DELAY,
+  INSERE_INSTRUCTION_FRAME,
+  INSERE_INSTRUCTION_IDLE,
+  INSERE_INSTRUCTION_PROMISE,
+  type InsereInstruction
+} from "./instruction.js";
 import type { InsereFailure } from "./supervision.js";
 
 export type InsereDispatch<TEvent = unknown> = (event: TEvent) => void;
@@ -34,6 +40,27 @@ export interface InsereOptions<TState = unknown, TEvent = unknown> {
 
 export type InsereWaitKind = "ready" | "frame" | "idle" | "delay" | "promise";
 
+const WAIT_READY = 0;
+const WAIT_FRAME = 1;
+const WAIT_IDLE = 2;
+const WAIT_DELAY = 3;
+const WAIT_PROMISE = 4;
+
+type WaitCode =
+  | typeof WAIT_READY
+  | typeof WAIT_FRAME
+  | typeof WAIT_IDLE
+  | typeof WAIT_DELAY
+  | typeof WAIT_PROMISE;
+
+const WAIT_KIND: readonly InsereWaitKind[] = [
+  "ready",
+  "frame",
+  "idle",
+  "delay",
+  "promise"
+];
+
 export interface InsereEntrySnapshot {
   readonly key: string;
   readonly wait: InsereWaitKind;
@@ -59,7 +86,7 @@ interface Entry<TState, TEvent> {
   aborted: boolean;
   controller: AbortController | undefined;
   finalizers: Set<() => void> | undefined;
-  wait: InsereWaitKind;
+  wait: WaitCode;
   waitFrame: number;
   wakeAt: number;
   promiseToken: PromiseToken | undefined;
@@ -117,7 +144,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       size: this.#entries.size,
       entries: [...this.#entries.values()].map((entry) => ({
         key: entry.key,
-        wait: entry.wait
+        wait: WAIT_KIND[entry.wait] as InsereWaitKind
       }))
     };
   }
@@ -134,6 +161,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
   }
 
   restart(key: string, factory: InsereRoutineFactory<TState, TEvent>): void {
+    this.#assertKey(key);
     const previous = this.#entries.get(key);
 
     if (!previous) {
@@ -150,7 +178,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
     previous.aborted = false;
     previous.controller = undefined;
     previous.finalizers = undefined;
-    previous.wait = "ready";
+    previous.wait = WAIT_READY;
     previous.waitFrame = 0;
     previous.wakeAt = 0;
     previous.promiseToken = undefined;
@@ -219,8 +247,8 @@ export class Insere<TState = unknown, TEvent = unknown> {
     if (this.#soleEntry) {
       const entry = this.#soleEntry;
 
-      if (entry.wait === "idle") {
-        entry.wait = "ready";
+      if (entry.wait === WAIT_IDLE) {
+        entry.wait = WAIT_READY;
         this.#resumeIfReady(entry);
       }
 
@@ -228,8 +256,8 @@ export class Insere<TState = unknown, TEvent = unknown> {
     }
 
     for (const entry of [...this.#entries.values()]) {
-      if (entry.wait === "idle") {
-        entry.wait = "ready";
+      if (entry.wait === WAIT_IDLE) {
+        entry.wait = WAIT_READY;
         this.#resumeIfReady(entry);
       }
     }
@@ -246,7 +274,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       aborted: false,
       controller: undefined,
       finalizers: undefined,
-      wait: "ready",
+      wait: WAIT_READY,
       waitFrame: 0,
       wakeAt: 0,
       promiseToken: undefined
@@ -270,7 +298,11 @@ export class Insere<TState = unknown, TEvent = unknown> {
         return runtime.#delta;
       },
       get signal() {
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("Insere context is only valid while a routine is running.");
+        }
+
         entry.controller ??= new AbortController();
 
         if (entry.aborted) {
@@ -282,49 +314,50 @@ export class Insere<TState = unknown, TEvent = unknown> {
       dispatch: (event) => this.#dispatch(event),
       getState: () => this.#getState(),
       onCancel: (cleanup) => {
-        const entry = runtime.#requireActiveEntry();
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("Insere context is only valid while a routine is running.");
+        }
+
         (entry.finalizers ??= new Set()).add(cleanup);
         return () => {
           entry.finalizers?.delete(cleanup);
         };
       },
       throwIfCancelled: () => {
-        if (runtime.#requireActiveEntry().aborted) {
+        const entry = runtime.#activeEntry;
+        if (!entry) {
+          throw new Error("Insere context is only valid while a routine is running.");
+        }
+
+        if (entry.aborted) {
           throw new DOMException("Insere routine was cancelled.", "AbortError");
         }
       }
     };
   }
 
-  #requireActiveEntry(): Entry<TState, TEvent> {
-    if (!this.#activeEntry) {
-      throw new Error("Insere context is only valid while a routine is running.");
-    }
-
-    return this.#activeEntry;
-  }
-
   #resumeIfReady(entry: Entry<TState, TEvent>): void {
     switch (entry.wait) {
-      case "ready":
-        entry.wait = "ready";
+      case WAIT_READY:
+        entry.wait = WAIT_READY;
         this.#resume(entry);
         return;
-      case "frame":
+      case WAIT_FRAME:
         if (this.#frame > entry.waitFrame) {
-          entry.wait = "ready";
+          entry.wait = WAIT_READY;
           this.#resume(entry);
         }
         return;
-      case "idle":
+      case WAIT_IDLE:
         return;
-      case "delay":
+      case WAIT_DELAY:
         if (this.#now >= entry.wakeAt) {
-          entry.wait = "ready";
+          entry.wait = WAIT_READY;
           this.#resume(entry);
         }
         return;
-      case "promise":
+      case WAIT_PROMISE:
         if (!entry.promiseToken) {
           return;
         }
@@ -337,7 +370,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
         if (entry.promiseToken.status === "fulfilled") {
           const value = entry.promiseToken.value;
           entry.promiseToken = undefined;
-          entry.wait = "ready";
+          entry.wait = WAIT_READY;
           this.#resume(entry, value);
         }
         return;
@@ -362,7 +395,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       this.#setWait(entry, result.value);
     } catch (error) {
       this.#activeEntry = undefined;
-      this.#reportFailure(entry, "ready", error);
+      this.#reportFailure(entry, WAIT_READY, error);
       entry.aborted = true;
       entry.controller?.abort();
       this.#deleteEntry(entry.key);
@@ -397,23 +430,48 @@ export class Insere<TState = unknown, TEvent = unknown> {
   }
 
   #setWait(entry: Entry<TState, TEvent>, instruction: InsereInstruction): void {
+    switch (instruction.op) {
+      case INSERE_INSTRUCTION_FRAME:
+        entry.wait = WAIT_FRAME;
+        entry.waitFrame = this.#frame;
+        entry.promiseToken = undefined;
+        return;
+      case INSERE_INSTRUCTION_IDLE:
+        entry.wait = WAIT_IDLE;
+        entry.promiseToken = undefined;
+        return;
+      case INSERE_INSTRUCTION_DELAY:
+        entry.wait = WAIT_DELAY;
+        entry.wakeAt = this.#now + instruction.ms;
+        entry.promiseToken = undefined;
+        return;
+      case INSERE_INSTRUCTION_PROMISE:
+        entry.wait = WAIT_PROMISE;
+        entry.promiseToken = this.#trackPromise(instruction.promise);
+        return;
+      default:
+        this.#setWaitByKind(entry, instruction);
+    }
+  }
+
+  #setWaitByKind(entry: Entry<TState, TEvent>, instruction: InsereInstruction): void {
     switch (instruction.kind) {
       case "frame":
-        entry.wait = "frame";
+        entry.wait = WAIT_FRAME;
         entry.waitFrame = this.#frame;
         entry.promiseToken = undefined;
         return;
       case "idle":
-        entry.wait = "idle";
+        entry.wait = WAIT_IDLE;
         entry.promiseToken = undefined;
         return;
       case "delay":
-        entry.wait = "delay";
+        entry.wait = WAIT_DELAY;
         entry.wakeAt = this.#now + instruction.ms;
         entry.promiseToken = undefined;
         return;
       case "promise":
-        entry.wait = "promise";
+        entry.wait = WAIT_PROMISE;
         entry.promiseToken = this.#trackPromise(instruction.promise);
         return;
     }
@@ -492,15 +550,18 @@ export class Insere<TState = unknown, TEvent = unknown> {
 
   #reportFailure(
     entry: Entry<TState, TEvent>,
-    wait: InsereWaitKind,
+    wait: WaitCode,
     cause: unknown
   ): void {
     try {
       this.#onFailure?.({
+        code: "RUNTIME_ERROR",
+        message: cause instanceof Error ? cause.message : String(cause),
+        stage: "Runtime",
         runtime: "effect",
         operation: "task",
         key: entry.key,
-        wait,
+        wait: WAIT_KIND[wait] as InsereWaitKind,
         frame: this.#frame,
         now: this.#now,
         delta: this.#delta,

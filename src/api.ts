@@ -4,7 +4,15 @@ import {
   type DirectInsereSnapshot,
   type DirectInsereStep
 } from "./core.js";
-import { err, ok, toRoutine, type InsereEffect } from "./effect.js";
+import {
+  err,
+  ok,
+  toRoutine,
+  type ErrorCode,
+  type InsereEffect,
+  type InsereResult,
+  type Stage
+} from "./effect.js";
 import { logInsereBug, type InsereLogger } from "./logging.js";
 import { Insere, type InsereOptions, type InsereSnapshot } from "./runtime.js";
 import {
@@ -29,10 +37,13 @@ import {
   type InsereTaskPolicy
 } from "./task.js";
 
+export type InsereRequestIdProvider = string | (() => string | undefined);
+
 export interface InsereApiOptions<TState = unknown, TEvent = unknown>
   extends DirectInsereOptions<TState, TEvent>,
     InsereOptions<TState, TEvent> {
   readonly logger?: InsereLogger;
+  readonly requestId?: InsereRequestIdProvider;
   readonly supervision?: InsereSupervisionOptions<TEvent>;
 }
 
@@ -64,6 +75,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
   readonly direct: DirectInsereTask<TState, TEvent>;
   readonly effect: Insere<TState, TEvent>;
   readonly #logger: InsereLogger | undefined;
+  readonly #requestId: InsereRequestIdProvider | undefined;
   readonly #dispatch: (event: TEvent) => void;
   readonly #supervision: NormalizedInsereSupervision<TEvent>;
   readonly #supervisedTasks = new Map<string, SupervisedTask<TState, TEvent>>();
@@ -71,15 +83,24 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
 
   constructor(options: InsereApiOptions<TState, TEvent> = {}) {
     this.#logger = options.logger;
+    this.#requestId = options.requestId;
     this.#dispatch = options.dispatch ?? (() => undefined);
     this.#supervision = normalizeInsereSupervision(options.supervision);
 
     const reportFailure = (failure: InsereFailure) => {
-      this.#lastFailure = failure;
-      this.#callFailureReporter("options.onFailure", failure, options.onFailure);
+      const fullFailure = this.#failure(
+        failure.operation,
+        failure.cause,
+        failure.key,
+        failure.policy,
+        failure.data
+      );
+
+      this.#lastFailure = fullFailure;
+      this.#callFailureReporter("options.onFailure", fullFailure, options.onFailure);
       this.#callFailureReporter(
         "supervision.onFailure",
-        failure,
+        fullFailure,
         this.#supervision.onFailure
       );
     };
@@ -124,7 +145,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     return taskGroup(...parts);
   }
 
-  tick(now: number): void {
+  tick(now: number): InsereResult<void> {
     try {
       this.direct.tick(now);
     } catch (error) {
@@ -146,9 +167,10 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     }
 
     this.#pruneCompletedTasks();
+    return ok(undefined);
   }
 
-  runIdle(): void {
+  runIdle(): InsereResult<void> {
     try {
       this.direct.runIdle();
     } catch (error) {
@@ -166,6 +188,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     }
 
     this.#pruneCompletedTasks();
+    return ok(undefined);
   }
 
   has(key: string): boolean {
@@ -235,11 +258,30 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
         this.#logBug("applyDirectResult", error, key, resolvedPolicy, {
           start: start ?? "run"
         });
-        return err(error);
+        return err(this.#failure("applyDirectResult", error, key, resolvedPolicy, {
+          start: start ?? "run"
+        }));
       }
 
       if (resolvedPolicy === "restart") {
-        this.cancel(key);
+        if (this.effect.has(key)) {
+          this.effect.cancel(key);
+        }
+
+        if (start === "frame") {
+          this.direct.cancel(key);
+          this.direct.waitFrame(key, step);
+        } else {
+          this.direct.restart(key, step);
+        }
+
+        this.#rememberDirect(key, step, start);
+        return ok({
+          key,
+          policy: resolvedPolicy,
+          applied: true,
+          status: keyExisted ? "restarted" : "started"
+        });
       }
 
       const result = applyDirectTaskResult(
@@ -251,21 +293,13 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       if (!result.ok) {
         const failure = this.#failure(
           "applyDirectResult",
-          result.error,
+          result.error.cause ?? result.error,
           key,
           resolvedPolicy,
           { start: start ?? "run" }
         );
         this.#logFailure(failure);
-        return result;
-      }
-
-      if (result.ok && resolvedPolicy === "restart" && keyExisted) {
-        this.#rememberDirect(key, step, start);
-        return ok({
-          ...result.value,
-          status: "restarted"
-        });
+        return err(failure);
       }
 
       if (result.ok && result.value.applied) {
@@ -278,7 +312,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
         start: start ?? "run"
       });
       this.#logFailure(failure);
-      return err(error);
+      return err(failure);
     }
   }
 
@@ -292,7 +326,9 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
 
   restartDirect(key: string, step: DirectInsereStep<TState, TEvent>): void {
     try {
-      this.cancel(key);
+      if (this.effect.has(key)) {
+        this.effect.cancel(key);
+      }
       this.direct.restart(key, step);
       this.#rememberDirect(key, step);
     } catch (error) {
@@ -337,11 +373,22 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       if (resolvedPolicy === "spawn" && keyExisted) {
         const error = new Error(`InsereApi task already exists: ${key}`);
         this.#logBug("applyEffectResult", error, key, resolvedPolicy);
-        return err(error);
+        return err(this.#failure("applyEffectResult", error, key, resolvedPolicy));
       }
 
       if (resolvedPolicy === "restart") {
-        this.cancel(key);
+        if (this.direct.has(key)) {
+          this.direct.cancel(key);
+        }
+
+        this.effect.restart(key, toRoutine(source));
+        this.#rememberEffect(key, source);
+        return ok({
+          key,
+          policy: resolvedPolicy,
+          applied: true,
+          status: keyExisted ? "restarted" : "started"
+        });
       }
 
       const result = applyTaskResult(
@@ -353,20 +400,12 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       if (!result.ok) {
         const failure = this.#failure(
           "applyEffectResult",
-          result.error,
+          result.error.cause ?? result.error,
           key,
           resolvedPolicy
         );
         this.#logFailure(failure);
-        return result;
-      }
-
-      if (result.ok && resolvedPolicy === "restart" && keyExisted) {
-        this.#rememberEffect(key, source);
-        return ok({
-          ...result.value,
-          status: "restarted"
-        });
+        return err(failure);
       }
 
       if (result.ok && result.value.applied) {
@@ -377,7 +416,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     } catch (error) {
       const failure = this.#failure("applyEffectResult", error, key, policy);
       this.#logFailure(failure);
-      return err(error);
+      return err(failure);
     }
   }
 
@@ -386,7 +425,9 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     source: InsereEffect<TState, TEvent, TValue>
   ): void {
     try {
-      this.cancel(key);
+      if (this.direct.has(key)) {
+        this.direct.cancel(key);
+      }
       this.effect.restart(key, toRoutine(source));
       this.#rememberEffect(key, source);
     } catch (error) {
@@ -447,60 +488,107 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     operation: InsereFailureOperation,
     cause: unknown,
     key?: string,
-    policy?: InsereTaskPolicy,
+    policy?: string,
     data?: Readonly<Record<string, unknown>>
   ): InsereFailure {
     const reported = this.#lastFailure;
     this.#lastFailure = undefined;
 
-    if (reported && reported.cause === cause) {
-      return {
-        ...reported,
-        operation,
-        ...(policy !== undefined ? { policy } : {}),
-        ...(data !== undefined ? { data: { ...reported.data, ...data } } : {})
-      };
-    }
+    const baseFailure = reported && reported.cause === cause
+      ? {
+          ...reported,
+          operation,
+          ...(policy !== undefined ? { policy } : {}),
+          ...(data !== undefined ? { data: { ...reported.data, ...data } } : {})
+        }
+      : {
+          runtime: "api" as const,
+          operation,
+          cause,
+          ...(key !== undefined ? { key } : {}),
+          ...(policy !== undefined ? { policy } : {}),
+          frame: this.frame,
+          now: this.now,
+          delta: this.delta,
+          ...(data !== undefined ? { data } : {})
+        };
 
     return {
-      runtime: "api",
-      operation,
-      cause,
-      ...(key !== undefined ? { key } : {}),
-      ...(policy !== undefined ? { policy } : {}),
-      frame: this.frame,
-      now: this.now,
-      delta: this.delta,
-      ...(data !== undefined ? { data } : {})
+      ...baseFailure,
+      code: this.#mapErrorCode(cause, operation),
+      stage: this.#mapStage(operation),
+      message: cause instanceof Error ? cause.message : String(cause)
     };
   }
 
+  #mapStage(operation: InsereFailureOperation): Stage {
+    switch (operation) {
+      case "tick":
+        return "Tick";
+      case "runIdle":
+        return "Tick";
+      case "applyDirectResult":
+      case "applyEffectResult":
+        return "ApplyTask";
+      case "cancel":
+      case "cancelAll":
+      case "cancelGroup":
+        return "Cancel";
+      case "restartDirect":
+      case "restartEffect":
+        return "Restart";
+      case "task":
+        return "Init";
+      default:
+        return "Runtime";
+    }
+  }
+
+  #mapErrorCode(cause: unknown, operation: InsereFailureOperation): ErrorCode {
+    if (cause instanceof Error && cause.message.includes("already exists")) {
+      return "TASK_ALREADY_EXISTS";
+    }
+    return "RUNTIME_ERROR";
+  }
+
   #logFailure(failure: InsereFailure): void {
-    const data: Record<string, unknown> = {};
+    const logger = this.#logger;
+
+    if (logger === undefined) {
+      return;
+    }
+
+    let data: Record<string, unknown> | undefined;
+    const requestId = this.#currentRequestId();
 
     if (failure.data !== undefined) {
-      Object.assign(data, failure.data);
+      data = { ...failure.data };
     }
 
     if (failure.wait !== undefined) {
+      data ??= {};
       data.wait = failure.wait;
     }
 
     if (failure.attempts !== undefined) {
+      data ??= {};
       data.attempts = failure.attempts;
     }
 
     logInsereBug({
+      logger,
       operation: failure.operation,
       cause: failure.cause,
       runtime: failure.runtime,
-      ...(this.#logger !== undefined ? { logger: this.#logger } : {}),
+      stage: failure.stage,
+      event: `${failure.stage}_${failure.operation}_Failed`,
+      ...(requestId !== undefined ? { requestId } : {}),
       ...(failure.key !== undefined ? { key: failure.key } : {}),
       ...(failure.policy !== undefined ? { policy: failure.policy } : {}),
       frame: failure.frame,
       now: failure.now,
       ...(failure.delta !== undefined ? { delta: failure.delta } : {}),
-      ...(Object.keys(data).length > 0 ? { data } : {})
+      ...(data !== undefined ? { data } : {})
     });
   }
 
@@ -508,9 +596,13 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     operation: InsereFailureOperation,
     cause: unknown,
     key?: string,
-    policy?: InsereTaskPolicy,
+    policy?: string,
     data?: Readonly<Record<string, unknown>>
   ): void {
+    if (this.#logger === undefined) {
+      return;
+    }
+
     this.#logFailure(this.#failure(operation, cause, key, policy, data));
   }
 
@@ -526,11 +618,22 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     try {
       callback(failure);
     } catch (error) {
+      const logger = this.#logger;
+
+      if (logger === undefined) {
+        return;
+      }
+
+      const requestId = this.#currentRequestId();
+
       logInsereBug({
+        logger,
         operation: failure.operation,
         cause: error,
         runtime: "api",
-        ...(this.#logger !== undefined ? { logger: this.#logger } : {}),
+        stage: "Supervise",
+        event: "Supervise_FailureReporter_Failed",
+        ...(requestId !== undefined ? { requestId } : {}),
         ...(failure.key !== undefined ? { key: failure.key } : {}),
         frame: failure.frame,
         now: failure.now,
@@ -540,6 +643,16 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
           originalCause: failure.cause
         }
       });
+    }
+  }
+
+  #currentRequestId(): string | undefined {
+    try {
+      return typeof this.#requestId === "function"
+        ? this.#requestId()
+        : this.#requestId;
+    } catch {
+      return undefined;
     }
   }
 
@@ -594,13 +707,10 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       }
     } catch (error) {
       const nextFailure: InsereFailure = {
+        ...this.#failure(failure.operation, error, item.key, undefined, {
+          attempts: item.attempts
+        }),
         runtime: item.runtime,
-        operation: failure.operation,
-        key: item.key,
-        frame: this.frame,
-        now: this.now,
-        delta: this.delta,
-        cause: error,
         attempts: item.attempts
       };
       this.#logFailure(nextFailure);
@@ -797,6 +907,15 @@ export function createInsereApi<TState = unknown, TEvent = unknown>(
   return new InsereApi(options);
 }
 
+export {
+  appError,
+  toAppError,
+  type AppError,
+  type AppErrorOptions,
+  type ErrorCode,
+  type InsereResult,
+  type Stage
+} from "./effect.js";
 export {
   createBufferedInsereLogger,
   createConsoleInsereLogger,

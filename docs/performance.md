@@ -36,13 +36,13 @@ This run used `INSERE_BENCH_REPEATS=11`.
 
 | Scenario | Baseline | Insere | Baseline ops/s | Insere ops/s | Best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 105,263.21 | 15,761,186.5 | 6.34 | Insere 149.73x |
-| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 16,992,353.44 | 53,390,282.97 | 0.19 | Insere 3.14x |
-| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 104,008.7 | 35,211,267.61 | 0.28 | Insere 338.54x |
-| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 162,134.47 | 14,790,711.43 | 0.68 | Insere 91.22x |
-| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 16,992,353.44 | 21,811,202.23 | 4.58 | Insere 1.28x |
-| Result branch | Direct TS value branch | `InsereResult ok/match` | 104,787,752.41 | 66,534,484.82 | 15.03 | Baseline 1.57x |
-| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 13,308,490.82 | 7,118,957.78 | 1.4 | Baseline 1.87x |
+| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 128,671.33 | 15,540,498.54 | 6.43 | Insere 120.78x |
+| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 20,024,028.83 | 50,428,643.47 | 0.2 | Insere 2.52x |
+| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 110,213.85 | 55,066,079.3 | 0.18 | Insere 499.63x |
+| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 270,935.16 | 19,275,250.58 | 0.52 | Insere 71.14x |
+| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 20,024,028.83 | 34,183,359.54 | 2.93 | Insere 1.71x |
+| Result branch | Direct TS value branch | `InsereResult ok/match` | 181,412,477.55 | 128,710,067.7 | 7.77 | Baseline 1.41x |
+| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 13,449,899.13 | 14,507,471.35 | 0.69 | Insere 1.08x |
 
 ## Interpretation
 
@@ -50,20 +50,21 @@ Insere should be compared against the control-flow machinery it replaces, not
 against a bare synchronous branch:
 
 - Restart storm compares against Promise plus `Map`, `AbortController`,
-  cleanup, and latest-only guard. Direct Insere was about 150x faster.
+  cleanup, and latest-only guard. Direct Insere was about 121x faster.
 - Frame continuation measures tasks already waiting for the next host tick.
-  Direct Insere was about 3.1x faster than flushing equivalent
+  Direct Insere was about 2.5x faster than flushing equivalent
   `Promise.resolve` continuations.
 - Cancel group measures cancelling 10k keyed tasks by prefix. Direct Insere was
-  about 339x faster and completed in 0.28ms in this run.
+  about 500x faster and completed in 0.18ms in this run.
 - Mixed cancel group measures cancelling the `asset:` half of a runtime that
-  also contains `preview:` tasks. Direct Insere was about 91x faster and
-  completed in 0.68ms.
+  also contains `preview:` tasks. Direct Insere was about 71x faster and
+  completed in 0.52ms.
 - `InsereResult ok/match` remains slower than direct value branching. That path
   is not treated as a hot scheduling path.
-- `InsereMailbox` fanout is slower than a simple `EventTarget` once-listener
-  Promise baseline. Mailbox exists for typed matching, buffering policy, and
-  cancellation cleanup, not as a high-volume event bus.
+- `InsereMailbox` fanout is now near parity with a simple `EventTarget`
+  once-listener Promise baseline and may win or lose depending on run variance.
+  Mailbox still exists for typed matching, buffering policy, and cancellation
+  cleanup first.
 
 That does not make Insere a poor fit for editor/game/rendering control flow.
 It means Insere should stay out of inner numeric loops and per-component hot
@@ -96,17 +97,18 @@ Latest local result, measured on 2026-05-14 with Node `v22.17.0`:
 
 | Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 98,433.53 | 794,830.42 | 12.58 | Insere 8.07x |
-| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,015,096.76 | 1,893,509.05 | 2.64 | Baseline 2.12x |
-| script event bus direct callbacks | Map keyed callbacks | InsereEventBus subscribe | 7,438,262.42 | 6,207,324.64 | 0.81 | Baseline 1.2x |
-| gameplay tick | Promise microtask gameplay | Insere direct gameplay | 11,507,921.29 | 2,626,947.22 | 11.42 | Baseline 4.38x |
-| physics/animation hot loop | Plain TS hot loop | One Insere host task | 698,226,504.68 | 750,525,367.76 | 0.67 | Insere 1.07x |
-| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 120,773.25 | 722,016.97 | 138.5 | Insere 5.98x |
+| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 97,829.55 | 694,787.01 | 14.39 | Insere 7.1x |
+| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,127,455.84 | 3,664,614.48 | 1.36 | Baseline 1.13x |
+| script event bus direct callbacks | Map keyed callbacks | InsereEventBus publish | 7,152,052.64 | 6,775,985.91 | 0.74 | Baseline 1.06x |
+| gameplay tick | Promise microtask gameplay | Insere direct gameplay | 12,687,135.24 | 3,204,477.72 | 9.36 | Baseline 3.96x |
+| physics/animation hot loop | Plain TS hot loop | One Insere host task | 872,905,027.93 | 830,426,839.4 | 0.6 | Baseline 1.05x |
+| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 113,821.91 | 8,958,486.37 | 11.16 | Insere 78.71x |
 
 Interpretation:
 
 - Use Insere for lifecycle cancellation and projection restart.
-- Use `InsereEventBus.subscribe()` for hot keyed script callbacks.
+- Use `InsereEventBus.subscribe()` plus `publish()` for hot keyed script
+  callbacks.
 - Use `waitBusEvent()` for keyed, cancellable script waits when suspension
   semantics matter more than raw event throughput.
 - Do not model gameplay tick as one task per entity.
@@ -129,6 +131,12 @@ The runtime keeps the public model unchanged while avoiding avoidable work:
 - Runtime wait state is stored as flat entry fields (`wait`, `waitFrame`,
   `wakeAt`, `promiseToken`) instead of allocating wait-state objects for every
   frame or delay yield.
+- Generator runtime wait state uses numeric opcodes internally and maps back to
+  public string wait kinds only for snapshots and failure reports.
+- Library-created scheduling instructions carry numeric opcodes, so the
+  runtime can avoid string dispatch on the common `frame`/`idle`/`delay`/
+  `promise` path while still accepting user-created instruction objects by
+  `kind`.
 - `AbortController` is created lazily only when `ctx.signal` is read.
 - Cancellation finalizer storage is created lazily only when `ctx.onCancel` is
   used.
@@ -148,3 +156,7 @@ The runtime keeps the public model unchanged while avoiding avoidable work:
 - Direct `cancelGroup` bulk-clears when every active key matches the prefix.
 - Direct `cancelGroup` indexes `:` boundary prefixes such as `asset:`,
   `preview:`, and `entity:1:` for mixed-runtime group cancellation.
+- `InsereEventBus.publish()` provides a listener-only hot path that skips
+  waiter resolution and buffering.
+- API-boundary logging exits before `requestId`, `data`, or log record
+  allocation when no logger is installed.
