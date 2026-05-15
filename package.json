@@ -1,7 +1,7 @@
 {
   "name": "@exornea/insere",
   "version": "0.1.0",
-  "description": "Host-cooperative task runtime for frame-aware TypeScript apps.",
+  "description": "A small cooperative scheduler for keyed, cancellable TypeScript editor workloads.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

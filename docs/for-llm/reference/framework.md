@@ -4,7 +4,7 @@ The framework layer sits above the direct core and generator/effect runtime.
 It is the recommended shape for large hosts such as editors, renderers, and
 game tools.
 
-This layer still exposes a host-cooperative task runtime, not a standalone
+This layer still exposes a host-cooperative scheduler, not a standalone
 executor. Host applications own rendering, I/O, threads, lifecycle, and the
 clock. Insere provides keyed scheduling, cancellation, event ingress,
 supervision, and logging around that host loop.

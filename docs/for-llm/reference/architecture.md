@@ -1,7 +1,7 @@
 # Insere Architecture
 
-Insere is a small host-cooperative task runtime for TypeScript applications
-that need public control flow.
+Insere is a small host-cooperative scheduler for TypeScript applications that
+need public control flow.
 
 It is not a standalone executor. It does not execute work independently, own
 threads, run worker pools, or hide background scheduling. The host owns the

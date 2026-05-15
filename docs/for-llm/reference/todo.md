@@ -3,7 +3,7 @@
 This document tracks design work that should stay in Insere, not in a single
 host application such as Geukbit.
 
-Insere's product boundary is a small host-cooperative task runtime. Avoid
+Insere's product boundary is a small host-cooperative scheduler. Avoid
 pulling it toward a standalone executor, worker pool, dependency container, or
 general job queue.
 
@@ -75,13 +75,13 @@ These items are now designed and implemented in the core API:
   `InsereEventBus`, `waitBusEvent`, listener-only `publish`, `abortable`, and
   explicit supervision policy with `bubble`, `logAndStop`, `dispatchAndStop`,
   `convertToResult`, and bounded `restart`.
-- Throw boundary audit: `docs/throw-boundaries.md` documents which APIs must
+- Throw boundary audit: `docs/for-llm/reference/throw-boundaries.md` documents which APIs must
   return `InsereResult` and which low-level/runtime boundaries intentionally
   throw.
 
 ## Performance Baseline
 
-`docs/performance.md` records the current microbenchmark results.
+`docs/for-llm/reference/performance.md` records the current microbenchmark results.
 
 Current local result, measured on 2026-05-15 with Node `v22.17.0` and
 `INSERE_BENCH_REPEATS=11`:
@@ -124,8 +124,9 @@ Design conclusion:
 
 ## Completed: Host Adapter Guidance
 
-The recommended host adapter shape is documented in `docs/api.md` and
-`docs/framework.md`. Hosts should keep renderer, editor, and game-engine
+The recommended host adapter shape is documented in
+`docs/for-llm/reference/api.md` and `docs/for-llm/reference/framework.md`.
+Hosts should keep renderer, editor, and game-engine
 ownership outside Insere while using the facade for one key space, one host
 clock, explicit task policy, and supervision.
 
@@ -166,7 +167,7 @@ interface TaskRuntimePort {
   `tick(now)`; Insere exposes the resulting `delta`.
 - Host applications convert uncaught task failures through explicit supervision
   policy or their own Result layer. API-boundary bug logging is documented in
-  `docs/logging.md`.
+  `docs/for-llm/reference/logging.md`.
 - Host applications choose task policy explicitly:
   - `restart` for superseded work such as projection rebuilds
   - `spawn` for unique sessions where duplicate keys indicate a bug

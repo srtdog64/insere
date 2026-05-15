@@ -1,10 +1,10 @@
 # Insere
 
-Host-cooperative task runtime for frame-aware TypeScript apps.
+Tiny cooperative scheduler for keyed, cancellable TypeScript editor workloads.
 
 Insere is not a Promise replacement, worker pool, or general job queue. It is a
-small host-cooperative task runtime for keyed, cancellable, explicitly
-scheduled work that should run with an editor, game, or renderer clock.
+small host-cooperative scheduler for keyed, cancellable, explicitly scheduled
+work that should run with an editor, game, or renderer clock.
 
 ```txt
 inserere = in + serere
@@ -149,10 +149,10 @@ host.tick(performance.now());
 
 ## Model
 
-Insere is a task runtime, not a standalone executor. It never owns threads,
-CPU parallelism, I/O execution, or background work. The host owns the clock and
-calls `tick(now)`; Insere only advances work that has explicitly yielded back
-to that host clock.
+Insere is a small cooperative scheduler, not a standalone executor. It never
+owns threads, CPU parallelism, I/O execution, or background work. The host owns
+the clock and calls `tick(now)`; Insere only advances work that has explicitly
+yielded back to that host clock.
 
 - A direct task is a keyed callback over the host clock.
 - A routine is a generator.
@@ -223,23 +223,14 @@ Version `0.1.0` is a public pre-release. The core scheduler, API facade,
 logging, supervision, mailbox, and benchmark gates are usable, but the API
 should still be treated as experimental until real host dogfood stabilizes it.
 
-See [`docs/todo.md`](docs/todo.md) for the current design status. Event
-mailbox, failure supervision, host adapter guidance, and benchmark gates are
-implemented; entity lifecycle composition remains a recipe-level design item.
+Start with [`docs/for-human/README.md`](docs/for-human/README.md) for the
+short human-facing guide.
 
-See [`docs/api.md`](docs/api.md) for the host-facing facade design.
+Use [`docs/for-llm/README.md`](docs/for-llm/README.md) as the long-form
+architecture and maintenance context for LLM/code agents.
 
-See [`docs/logging.md`](docs/logging.md) for structured bug logging.
-It covers `requestId` propagation and the no-logger fast path.
-
-See [`docs/framework.md`](docs/framework.md) for mailbox, supervision, host
-adapter, and AbortSignal I/O conventions.
-
-See [`docs/performance.md`](docs/performance.md) for the current benchmark
-against plain TypeScript/JavaScript baselines.
-
-See [`docs/stability.md`](docs/stability.md) for the package boundary, public
-entrypoints, and release gates.
+Detailed reference docs live under
+[`docs/for-llm/reference`](docs/for-llm/reference).
 
 Run `npm run check` for the standard build, test typecheck, test,
 export-smoke, and pack gate.
