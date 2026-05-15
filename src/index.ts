@@ -1,4 +1,8 @@
 export {
+  type InsereBaseContext,
+  type InsereCancellationContext
+} from "./context.js";
+export {
   InsereApi,
   InsereApiScope,
   createInsereApi,
@@ -145,6 +149,7 @@ export {
   InsereEventBus,
   createInsereEventBus,
   waitBusEvent,
+  waitUniqueBusEvent,
   type InsereEventListener,
   type InsereEventBusOptions,
   type InsereEventBusSubscribeOptions,

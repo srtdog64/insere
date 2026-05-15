@@ -189,6 +189,57 @@ describe("DirectInsereTask", () => {
     expect(runtime.keys()).toEqual(["preview:1"]);
   });
 
+  it("keeps reentrant next-frame work when the frame fast path is invalidated", () => {
+    const events: string[] = [];
+    const runtime = new DirectInsereTask();
+
+    runtime.waitFrame("asset:1", () => {
+      events.push("asset:1");
+      runtime.waitFrame("preview:1", () => {
+        events.push("preview:1");
+      });
+    });
+    runtime.waitFrame("asset:2", () => {
+      events.push("asset:2");
+    });
+
+    runtime.tick(1);
+
+    expect(events).toEqual(["asset:1", "asset:2"]);
+    expect(runtime.keys()).toEqual(["preview:1"]);
+
+    runtime.tick(2);
+
+    expect(events).toEqual(["asset:1", "asset:2", "preview:1"]);
+    expect(runtime.size).toBe(0);
+  });
+
+  it("handles reentrant cancelGroup during frame queue draining", () => {
+    const events: string[] = [];
+    const runtime = new DirectInsereTask();
+
+    runtime.waitFrame("asset:1", () => {
+      events.push("asset:1");
+      expect(runtime.cancelGroup("asset:")).toBe(2);
+      runtime.waitFrame("preview:1", () => {
+        events.push("preview:1");
+      });
+    });
+    runtime.waitFrame("asset:2", () => {
+      events.push("asset:2");
+    });
+
+    runtime.tick(1);
+
+    expect(events).toEqual(["asset:1"]);
+    expect(runtime.keys()).toEqual(["preview:1"]);
+
+    runtime.tick(2);
+
+    expect(events).toEqual(["asset:1", "preview:1"]);
+    expect(runtime.size).toBe(0);
+  });
+
   it("runs multiple direct finalizers in reverse registration order", () => {
     const events: string[] = [];
     const runtime = new DirectInsereTask();
@@ -385,9 +436,11 @@ describe("DirectInsereTask", () => {
     expect(runtime.size).toBe(0);
   });
 
-  it("does not let direct failure reporters prevent cleanup", () => {
+  it("isolates direct task failures and does not let failure reporters prevent cleanup", () => {
+    const failures: string[] = [];
     const runtime = new DirectInsereTask({
-      onFailure: () => {
+      onFailure: (failure) => {
+        failures.push(failure.key ?? "");
         throw new Error("report failed");
       }
     });
@@ -396,8 +449,30 @@ describe("DirectInsereTask", () => {
       throw new Error("task failed");
     });
 
-    expect(() => runtime.tick(1)).toThrow("task failed");
+    expect(() => runtime.tick(1)).not.toThrow();
     expect(runtime.has("broken")).toBe(false);
+    expect(failures).toEqual(["broken"]);
+  });
+
+  it("continues later direct tasks after one task fails", () => {
+    const events: string[] = [];
+    const failures: string[] = [];
+    const runtime = new DirectInsereTask({
+      onFailure: (failure) => failures.push(failure.key ?? "")
+    });
+
+    runtime.waitFrame("broken", () => {
+      throw new Error("task failed");
+    });
+    runtime.waitFrame("healthy", () => {
+      events.push("healthy");
+    });
+
+    runtime.tick(1);
+
+    expect(failures).toEqual(["broken"]);
+    expect(events).toEqual(["healthy"]);
+    expect(runtime.size).toBe(0);
   });
 
   it("scopes direct tasks with prefixed keys and snapshots", () => {

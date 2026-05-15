@@ -177,13 +177,13 @@ async function insereScriptEventBus() {
   const promises = [];
 
   for (let index = 0; index < scriptEvents; index += 1) {
-    promises.push(eventBus.wait(`entity:${index}`).then((event) => {
+    promises.push(eventBus.waitUnique(`entity:${index}`).then((event) => {
       sink += event.entity;
     }));
   }
 
   for (let index = 0; index < scriptEvents; index += 1) {
-    eventBus.emit(`entity:${index}`, { entity: index });
+    eventBus.emitUnique(`entity:${index}`, { entity: index });
   }
 
   await Promise.all(promises);
@@ -411,7 +411,7 @@ const rows = [
   {
     scenario: "script event bus targeted",
     baseline: await measureAsync("Map keyed Promise bus", scriptEvents, mapScriptEventBus),
-    insere: await measureAsync("InsereEventBus", scriptEvents, insereScriptEventBus)
+    insere: await measureAsync("InsereEventBus unique waits", scriptEvents, insereScriptEventBus)
   },
   {
     scenario: "script event bus direct callbacks setup+publish",
@@ -482,6 +482,9 @@ if (gate) {
   assertInsereFaster("runtime projection restart", 2);
   assertNotSlowerThan("script event bus direct callbacks publish-only", 0.5);
   assertNotSlowerThan("physics/animation hot loop", 0.5);
+  assertInsereMedianAtMost("per-entity lifecycle cancel", 75);
+  assertInsereMedianAtMost("gameplay tick system task", 2);
+  assertInsereMedianAtMost("runtime projection restart", 30);
 }
 
 function assertInsereFaster(scenario, minRatio) {
@@ -512,6 +515,20 @@ function assertNotSlowerThan(scenario, minRatio) {
   if (ratio < minRatio) {
     throw new Error(
       `${scenario} median gate failed: Insere ${formatNumber(ratio)}x baseline, expected >= ${minRatio}x.`
+    );
+  }
+}
+
+function assertInsereMedianAtMost(scenario, maxMs) {
+  const row = rows.find((item) => item.scenario === scenario);
+
+  if (!row) {
+    throw new Error(`Missing Geukbit benchmark scenario: ${scenario}`);
+  }
+
+  if (row.insere.medianMs > maxMs) {
+    throw new Error(
+      `${scenario} absolute gate failed: Insere median ${formatNumber(row.insere.medianMs)}ms, expected <= ${maxMs}ms.`
     );
   }
 }

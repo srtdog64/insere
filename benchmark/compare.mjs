@@ -473,9 +473,30 @@ function setupInsereTargetedEventBus(iterations) {
   return { eventBus, promises };
 }
 
+function setupInsereUniqueTargetedEventBus(iterations) {
+  const eventBus = createInsereEventBus();
+  const promises = [];
+
+  for (let index = 0; index < iterations; index += 1) {
+    promises.push(eventBus.waitUnique(`entity:${index}`).then((event) => {
+      sink += event.entity;
+    }));
+  }
+
+  return { eventBus, promises };
+}
+
 async function insereTargetedEventBus(prepared) {
   for (let index = 0; index < prepared.promises.length; index += 1) {
     prepared.eventBus.emit(`entity:${index}`, { entity: index });
+  }
+
+  await Promise.all(prepared.promises);
+}
+
+async function insereUniqueTargetedEventBus(prepared) {
+  for (let index = 0; index < prepared.promises.length; index += 1) {
+    prepared.eventBus.emitUnique(`entity:${index}`, { entity: index });
   }
 
   await Promise.all(prepared.promises);
@@ -578,6 +599,12 @@ const insereScriptEvents = await measurePreparedAsync(
   setupInsereTargetedEventBus,
   insereTargetedEventBus
 );
+const insereUniqueScriptEvents = await measurePreparedAsync(
+  "InsereEventBus unique waits",
+  scriptEvents,
+  setupInsereUniqueTargetedEventBus,
+  insereUniqueTargetedEventBus
+);
 
 const p0Rows = [
   {
@@ -630,6 +657,11 @@ const frameworkRows = [
     scenario: "Script event bus targeted",
     baseline: mapScriptEvents,
     insere: insereScriptEvents
+  },
+  {
+    scenario: "Script event bus unique targeted",
+    baseline: mapScriptEvents,
+    insere: insereUniqueScriptEvents
   }
 ];
 
@@ -651,6 +683,10 @@ if (gate) {
   assertInsereFaster("Frame continuation", p0Rows, 1.2);
   assertInsereFaster("Cancel group", p0Rows, 2);
   assertInsereFaster("Cancel group mixed", p0Rows, 2);
+  assertInsereMedianAtMost("Restart storm", p0Rows, 20);
+  assertInsereMedianAtMost("Frame continuation", p0Rows, 1.5);
+  assertInsereMedianAtMost("Cancel group", p0Rows, 2);
+  assertInsereMedianAtMost("Cancel group mixed", p0Rows, 5);
 }
 
 function printTable(title, rows) {
@@ -682,6 +718,20 @@ function assertInsereFaster(scenario, rows, minRatio) {
   if (ratio < minRatio) {
     throw new Error(
       `${scenario} median gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
+    );
+  }
+}
+
+function assertInsereMedianAtMost(scenario, rows, maxMs) {
+  const row = rows.find((item) => item.scenario === scenario);
+
+  if (!row) {
+    throw new Error(`Missing benchmark scenario: ${scenario}`);
+  }
+
+  if (row.insere.medianMs > maxMs) {
+    throw new Error(
+      `${scenario} absolute gate failed: Insere median ${formatNumber(row.insere.medianMs)}ms, expected <= ${maxMs}ms.`
     );
   }
 }

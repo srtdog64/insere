@@ -1,3 +1,8 @@
+import { InsereClock } from "./clock.js";
+import type {
+  InsereBaseContext,
+  InsereCancellationContext
+} from "./context.js";
 import {
   INSERE_INSTRUCTION_DELAY,
   INSERE_INSTRUCTION_FRAME,
@@ -10,17 +15,8 @@ import type { InsereFailure } from "./supervision.js";
 export type InsereDispatch<TEvent = unknown> = (event: TEvent) => void;
 export type InsereStateReader<TState = unknown> = () => TState;
 
-export interface InsereContext<TState = unknown, TEvent = unknown> {
-  readonly key: string;
-  readonly frame: number;
-  readonly now: number;
-  readonly delta: number;
-  readonly signal: AbortSignal;
-  dispatch(event: TEvent): void;
-  getState(): TState;
-  onCancel(cleanup: () => void): () => void;
-  throwIfCancelled(): void;
-}
+export interface InsereContext<TState = unknown, TEvent = unknown>
+  extends InsereBaseContext<TState, TEvent>, InsereCancellationContext {}
 
 export type InsereRoutine<TState = unknown, TEvent = unknown> = Generator<
   InsereInstruction,
@@ -82,10 +78,11 @@ interface PromiseToken {
 
 interface Entry<TState, TEvent> {
   readonly key: string;
+  index: number;
   routine: InsereRoutine<TState, TEvent>;
   aborted: boolean;
   controller: AbortController | undefined;
-  finalizers: Set<() => void> | undefined;
+  finalizers: (() => void)[] | undefined;
   wait: WaitCode;
   waitFrame: number;
   wakeAt: number;
@@ -94,16 +91,14 @@ interface Entry<TState, TEvent> {
 
 export class Insere<TState = unknown, TEvent = unknown> {
   readonly #entries = new Map<string, Entry<TState, TEvent>>();
+  readonly #entryList: Entry<TState, TEvent>[] = [];
   readonly #dispatch: InsereDispatch<TEvent>;
   readonly #getState: InsereStateReader<TState>;
   readonly #onFailure: ((failure: InsereFailure) => void) | undefined;
   readonly #context: InsereContext<TState, TEvent>;
   #activeEntry: Entry<TState, TEvent> | undefined;
   #soleEntry: Entry<TState, TEvent> | undefined;
-  #frame = 0;
-  #now = 0;
-  #previousNow = 0;
-  #delta = 0;
+  readonly #clock = new InsereClock();
 
   constructor(options: InsereOptions<TState, TEvent> = {}) {
     this.#dispatch = options.dispatch ?? (() => undefined);
@@ -117,15 +112,15 @@ export class Insere<TState = unknown, TEvent = unknown> {
   }
 
   get frame(): number {
-    return this.#frame;
+    return this.#clock.frame;
   }
 
   get now(): number {
-    return this.#now;
+    return this.#clock.now;
   }
 
   get delta(): number {
-    return this.#delta;
+    return this.#clock.delta;
   }
 
   has(key: string): boolean {
@@ -138,11 +133,11 @@ export class Insere<TState = unknown, TEvent = unknown> {
 
   snapshot(): InsereSnapshot {
     return {
-      frame: this.#frame,
-      now: this.#now,
-      delta: this.#delta,
+      frame: this.#clock.frame,
+      now: this.#clock.now,
+      delta: this.#clock.delta,
       size: this.#entries.size,
-      entries: [...this.#entries.values()].map((entry) => ({
+      entries: this.#entryList.map((entry) => ({
         key: entry.key,
         wait: WAIT_KIND[entry.wait] as InsereWaitKind
       }))
@@ -208,9 +203,13 @@ export class Insere<TState = unknown, TEvent = unknown> {
 
     let count = 0;
 
-    for (const key of [...this.#entries.keys()]) {
-      if (key.startsWith(prefix) && this.cancel(key)) {
+    for (let index = 0; index < this.#entryList.length;) {
+      const entry = this.#entryList[index]!;
+
+      if (entry.key.startsWith(prefix) && this.cancel(entry.key)) {
         count += 1;
+      } else if (this.#entryList[index] === entry) {
+        index += 1;
       }
     }
 
@@ -218,28 +217,26 @@ export class Insere<TState = unknown, TEvent = unknown> {
   }
 
   cancelAll(): void {
-    for (const key of [...this.#entries.keys()]) {
-      this.cancel(key);
+    while (this.#entryList.length > 0) {
+      this.cancel(this.#entryList[0]!.key);
     }
   }
 
   tick(now: number): void {
-    if (!Number.isFinite(now)) {
-      throw new RangeError(`Invalid tick time: ${now}`);
-    }
-
-    this.#now = now;
-    this.#delta = this.#frame === 0 ? 0 : now - this.#previousNow;
-    this.#previousNow = now;
-    this.#frame += 1;
+    this.#clock.advance(now);
 
     if (this.#soleEntry) {
       this.#resumeIfReady(this.#soleEntry);
       return;
     }
 
-    for (const entry of [...this.#entries.values()]) {
+    const entries = this.#entryList;
+    for (let index = 0; index < entries.length;) {
+      const entry = entries[index]!;
       this.#resumeIfReady(entry);
+      if (entries[index] === entry) {
+        index += 1;
+      }
     }
   }
 
@@ -255,10 +252,15 @@ export class Insere<TState = unknown, TEvent = unknown> {
       return;
     }
 
-    for (const entry of [...this.#entries.values()]) {
+    const entries = this.#entryList;
+    for (let index = 0; index < entries.length;) {
+      const entry = entries[index]!;
       if (entry.wait === WAIT_IDLE) {
         entry.wait = WAIT_READY;
         this.#resumeIfReady(entry);
+      }
+      if (entries[index] === entry) {
+        index += 1;
       }
     }
   }
@@ -270,6 +272,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
     const routine = factory(this.#context);
     return {
       key,
+      index: -1,
       routine,
       aborted: false,
       controller: undefined,
@@ -289,13 +292,13 @@ export class Insere<TState = unknown, TEvent = unknown> {
         return runtime.#activeEntry?.key ?? "";
       },
       get frame() {
-        return runtime.#frame;
+        return runtime.#clock.frame;
       },
       get now() {
-        return runtime.#now;
+        return runtime.#clock.now;
       },
       get delta() {
-        return runtime.#delta;
+        return runtime.#clock.delta;
       },
       get signal() {
         const entry = runtime.#activeEntry;
@@ -319,9 +322,17 @@ export class Insere<TState = unknown, TEvent = unknown> {
           throw new Error("Insere context is only valid while a routine is running.");
         }
 
-        (entry.finalizers ??= new Set()).add(cleanup);
+        (entry.finalizers ??= []).push(cleanup);
         return () => {
-          entry.finalizers?.delete(cleanup);
+          const finalizers = entry.finalizers;
+          if (!finalizers) {
+            return;
+          }
+
+          const index = finalizers.indexOf(cleanup);
+          if (index !== -1) {
+            finalizers.splice(index, 1);
+          }
         };
       },
       throwIfCancelled: () => {
@@ -344,7 +355,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
         this.#resume(entry);
         return;
       case WAIT_FRAME:
-        if (this.#frame > entry.waitFrame) {
+        if (this.#clock.frame > entry.waitFrame) {
           entry.wait = WAIT_READY;
           this.#resume(entry);
         }
@@ -352,7 +363,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       case WAIT_IDLE:
         return;
       case WAIT_DELAY:
-        if (this.#now >= entry.wakeAt) {
+        if (this.#clock.now >= entry.wakeAt) {
           entry.wait = WAIT_READY;
           this.#resume(entry);
         }
@@ -399,7 +410,6 @@ export class Insere<TState = unknown, TEvent = unknown> {
       entry.aborted = true;
       entry.controller?.abort();
       this.#deleteEntry(entry.key);
-      throw error;
     }
   }
 
@@ -425,7 +435,6 @@ export class Insere<TState = unknown, TEvent = unknown> {
       entry.aborted = true;
       entry.controller?.abort();
       this.#deleteEntry(entry.key);
-      throw thrown;
     }
   }
 
@@ -433,7 +442,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
     switch (instruction.op) {
       case INSERE_INSTRUCTION_FRAME:
         entry.wait = WAIT_FRAME;
-        entry.waitFrame = this.#frame;
+        entry.waitFrame = this.#clock.frame;
         entry.promiseToken = undefined;
         return;
       case INSERE_INSTRUCTION_IDLE:
@@ -442,7 +451,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
         return;
       case INSERE_INSTRUCTION_DELAY:
         entry.wait = WAIT_DELAY;
-        entry.wakeAt = this.#now + instruction.ms;
+        entry.wakeAt = this.#clock.now + instruction.ms;
         entry.promiseToken = undefined;
         return;
       case INSERE_INSTRUCTION_PROMISE:
@@ -458,7 +467,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
     switch (instruction.kind) {
       case "frame":
         entry.wait = WAIT_FRAME;
-        entry.waitFrame = this.#frame;
+        entry.waitFrame = this.#clock.frame;
         entry.promiseToken = undefined;
         return;
       case "idle":
@@ -467,7 +476,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
         return;
       case "delay":
         entry.wait = WAIT_DELAY;
-        entry.wakeAt = this.#now + instruction.ms;
+        entry.wakeAt = this.#clock.now + instruction.ms;
         entry.promiseToken = undefined;
         return;
       case "promise":
@@ -496,7 +505,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
 
   #runFinalizers(entry: Entry<TState, TEvent>): void {
     const callbacks = entry.finalizers;
-    if (!callbacks || callbacks.size === 0) {
+    if (!callbacks || callbacks.length === 0) {
       return;
     }
 
@@ -505,16 +514,13 @@ export class Insere<TState = unknown, TEvent = unknown> {
     const previousActive = this.#activeEntry;
     this.#activeEntry = entry;
     try {
-      if (callbacks.size === 1) {
-        for (const cleanup of callbacks) {
-          cleanup();
-        }
+      if (callbacks.length === 1) {
+        callbacks[0]!();
         return;
       }
 
-      const finalizers = [...callbacks].reverse();
-      for (const cleanup of finalizers) {
-        cleanup();
+      for (let index = callbacks.length - 1; index >= 0; index -= 1) {
+        callbacks[index]!();
       }
     } finally {
       this.#activeEntry = previousActive;
@@ -523,19 +529,34 @@ export class Insere<TState = unknown, TEvent = unknown> {
 
   #setEntry(entry: Entry<TState, TEvent>): void {
     this.#entries.set(entry.key, entry);
-    this.#soleEntry = this.#entries.size === 1 ? entry : undefined;
+    entry.index = this.#entryList.length;
+    this.#entryList.push(entry);
+    this.#soleEntry = this.#entryList.length === 1 ? entry : undefined;
   }
 
   #deleteEntry(key: string): void {
-    this.#entries.delete(key);
+    const entry = this.#entries.get(key);
+    if (!entry) {
+      return;
+    }
 
-    if (this.#entries.size === 0) {
+    this.#entries.delete(key);
+    const index = entry.index;
+    this.#entryList.splice(index, 1);
+
+    for (let cursor = index; cursor < this.#entryList.length; cursor += 1) {
+      this.#entryList[cursor]!.index = cursor;
+    }
+
+    entry.index = -1;
+
+    if (this.#entryList.length === 0) {
       this.#soleEntry = undefined;
       return;
     }
 
-    if (this.#entries.size === 1) {
-      this.#soleEntry = this.#entries.values().next().value;
+    if (this.#entryList.length === 1) {
+      this.#soleEntry = this.#entryList[0];
       return;
     }
 
@@ -562,13 +583,13 @@ export class Insere<TState = unknown, TEvent = unknown> {
         operation: "task",
         key: entry.key,
         wait: WAIT_KIND[wait] as InsereWaitKind,
-        frame: this.#frame,
-        now: this.#now,
-        delta: this.#delta,
+        frame: this.#clock.frame,
+        now: this.#clock.now,
+        delta: this.#clock.delta,
         cause
       });
     } catch {
-      // Failure reporters must not prevent task cleanup or rethrow semantics.
+      // Failure reporters must not prevent task cleanup or isolation semantics.
     }
   }
 }

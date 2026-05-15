@@ -68,7 +68,7 @@ export function normalizeInsereSupervision<TEvent>(
   }
 
   return {
-    policy: options?.policy ?? "bubble",
+    policy: options?.policy ?? "logAndStop",
     maxRestarts,
     ...(options?.toEvent !== undefined ? { toEvent: options.toEvent } : {}),
     ...(options?.onFailure !== undefined ? { onFailure: options.onFailure } : {}),

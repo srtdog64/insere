@@ -82,7 +82,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
   readonly #dispatch: (event: TEvent) => void;
   readonly #supervision: NormalizedInsereSupervision<TEvent>;
   readonly #supervisedTasks = new Map<string, SupervisedTask<TState, TEvent>>();
-  #lastFailure: InsereFailure | undefined;
+  readonly #pendingFailures: InsereFailure[] = [];
 
   constructor(options: InsereApiOptions<TState, TEvent> = {}) {
     this.#logger = options.logger;
@@ -99,7 +99,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
         failure.data
       );
 
-      this.#lastFailure = fullFailure;
+      this.#pendingFailures.push(fullFailure);
       this.#callFailureReporter("options.onFailure", fullFailure, options.onFailure);
       this.#callFailureReporter(
         "supervision.onFailure",
@@ -149,6 +149,8 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
   }
 
   tick(now: number): InsereResult<void> {
+    let firstFailure: InsereFailure | undefined;
+
     try {
       this.direct.tick(now);
     } catch (error) {
@@ -157,6 +159,12 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       });
       this.#logFailure(failure);
       this.#supervise(failure);
+      firstFailure = failure;
+    }
+
+    const directFailure = this.#drainReportedFailures();
+    if (directFailure) {
+      firstFailure ??= directFailure;
     }
 
     try {
@@ -167,19 +175,37 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       });
       this.#logFailure(failure);
       this.#supervise(failure);
+      firstFailure ??= failure;
+    }
+
+    const effectFailure = this.#drainReportedFailures();
+    if (effectFailure) {
+      firstFailure ??= effectFailure;
     }
 
     this.#pruneCompletedTasks();
+    if (firstFailure) {
+      return err(firstFailure);
+    }
+
     return ok(undefined);
   }
 
   runIdle(): InsereResult<void> {
+    let firstFailure: InsereFailure | undefined;
+
     try {
       this.direct.runIdle();
     } catch (error) {
       const failure = this.#failure("runIdle", error);
       this.#logFailure(failure);
       this.#supervise(failure);
+      firstFailure = failure;
+    }
+
+    const directFailure = this.#drainReportedFailures();
+    if (directFailure) {
+      firstFailure ??= directFailure;
     }
 
     try {
@@ -188,9 +214,19 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       const failure = this.#failure("runIdle", error);
       this.#logFailure(failure);
       this.#supervise(failure);
+      firstFailure ??= failure;
+    }
+
+    const effectFailure = this.#drainReportedFailures();
+    if (effectFailure) {
+      firstFailure ??= effectFailure;
     }
 
     this.#pruneCompletedTasks();
+    if (firstFailure) {
+      return err(firstFailure);
+    }
+
     return ok(undefined);
   }
 
@@ -510,31 +546,21 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     policy?: string,
     data?: Readonly<Record<string, unknown>>
   ): InsereFailure {
-    const reported = this.#lastFailure;
-    this.#lastFailure = undefined;
-
-    const baseFailure = reported && reported.cause === cause
-      ? {
-          ...reported,
-          operation,
-          ...(policy !== undefined ? { policy } : {}),
-          ...(data !== undefined ? { data: { ...reported.data, ...data } } : {})
-        }
-      : {
-          runtime: "api" as const,
-          operation,
-          cause,
-          ...(key !== undefined ? { key } : {}),
-          ...(policy !== undefined ? { policy } : {}),
-          frame: this.frame,
-          now: this.now,
-          delta: this.delta,
-          ...(data !== undefined ? { data } : {})
-        };
+    const baseFailure = {
+      runtime: "api" as const,
+      operation,
+      cause,
+      ...(key !== undefined ? { key } : {}),
+      ...(policy !== undefined ? { policy } : {}),
+      frame: this.frame,
+      now: this.now,
+      delta: this.delta,
+      ...(data !== undefined ? { data } : {})
+    };
 
     return {
       ...baseFailure,
-      code: this.#mapErrorCode(cause, operation),
+      code: this.#mapErrorCode(cause),
       stage: this.#mapStage(operation),
       message: cause instanceof Error ? cause.message : String(cause)
     };
@@ -563,7 +589,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     }
   }
 
-  #mapErrorCode(cause: unknown, operation: InsereFailureOperation): ErrorCode {
+  #mapErrorCode(cause: unknown): ErrorCode {
     if (cause instanceof Error && cause.message.includes("already exists")) {
       return "TASK_ALREADY_EXISTS";
     }
@@ -625,6 +651,24 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     this.#logFailure(this.#failure(operation, cause, key, policy, data));
   }
 
+  #drainReportedFailures(): InsereFailure | undefined {
+    let first: InsereFailure | undefined;
+    const failures = this.#pendingFailures;
+
+    try {
+      for (let index = 0; index < failures.length; index += 1) {
+        const failure = failures[index]!;
+        first ??= failure;
+        this.#logFailure(failure);
+        this.#supervise(failure);
+      }
+    } finally {
+      failures.length = 0;
+    }
+
+    return first;
+  }
+
   #callFailureReporter(
     reporter: string,
     failure: InsereFailure,
@@ -684,13 +728,31 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
         return;
       case "dispatchAndStop":
         if (!this.#supervision.toEvent) {
-          throw failure.cause;
+          this.#logFailure(this.#failure(failure.operation, failure.cause, failure.key, failure.policy, {
+            supervision: "dispatchAndStop",
+            reason: "missingToEvent"
+          }));
+          return;
         }
 
-        this.#dispatch(this.#supervision.toEvent(failure));
+        try {
+          this.#dispatch(this.#supervision.toEvent(failure));
+        } catch (error) {
+          this.#logFailure(this.#failure(failure.operation, error, failure.key, failure.policy, {
+            supervision: "dispatchAndStop",
+            originalCause: failure.cause
+          }));
+        }
         return;
       case "convertToResult":
-        this.#supervision.onResult?.(failureResult(failure));
+        try {
+          this.#supervision.onResult?.(failureResult(failure));
+        } catch (error) {
+          this.#logFailure(this.#failure(failure.operation, error, failure.key, failure.policy, {
+            supervision: "convertToResult",
+            originalCause: failure.cause
+          }));
+        }
         return;
       case "restart":
         if (this.#restartFailedTask(failure)) {
@@ -698,7 +760,7 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
         }
 
         this.#pruneCompletedTasks();
-        throw failure.cause;
+        return;
     }
   }
 

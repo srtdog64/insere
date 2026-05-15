@@ -61,6 +61,7 @@ small cooperative scheduler below those adapters.
 host app
   InsereHostAdapter
     InsereApi
+      InsereClock
       DirectInsereTask
       Insere generator runtime
     InsereMailbox
@@ -74,6 +75,9 @@ Key layers:
 - `@exornea/insere/api` is the recommended host-facing facade. It joins direct
   tasks and effects behind one clock, one key space, one scope model, one
   Result shape, and one supervision/logging boundary.
+- `InsereClock` is the internal clock layer shared by direct and generator
+  runtimes. It owns `frame`, `now`, and `delta` advancement semantics so both
+  runtimes observe the same host-clock model.
 - `DirectInsereTask` is the no-Promise and no-generator core for hot keyed
   orchestration. Use it for restart storm, frame continuation, system
   `frameLoop`, and prefix cancellation paths.
@@ -101,11 +105,19 @@ Task policies:
 
 Supervision policies:
 
-- `bubble`: rethrow the original failure.
-- `logAndStop`: log/report and leave the failed task stopped.
+- `bubble`: explicit development policy that rethrows the original failure.
+- `logAndStop`: default isolation policy that logs/reports and leaves the
+  failed task stopped.
 - `dispatchAndStop`: convert failure into a host event.
 - `convertToResult`: send a failed Result to the host callback.
 - `restart`: restart API-owned work up to a bounded restart count.
+
+Lower runtimes must isolate task failures. A task exception is converted into
+`InsereFailure`, the failed task is removed, and unrelated runnable tasks keep
+their opportunity to advance. API `tick()` / `runIdle()` return `err(failure)`
+for the first failure unless an explicit `bubble` policy rethrows.
+Host-provided supervision callbacks are also isolated under non-`bubble`
+policies and logged as bug records if they throw.
 
 Keep policy names and meanings consistent between direct tasks, effects,
 scopes, API facade, and host adapter.
@@ -168,14 +180,15 @@ Geukbit-scale targets:
 - lifecycle cancellation should beat Promise Map+Abort.
 - projection restart should beat Promise latest-only projection.
 - gameplay should use one `frameLoop` per system or phase, not one task per
-  entity.
+  entity. `frameLoop` callbacks return `true` to continue and `false` to stop.
 - physics/animation numeric loops should remain plain TypeScript under one
   host task.
 - event-bus listener hot paths may be near parity with raw keyed callbacks;
   they exist for keyed subscriptions and cancellation, not universal speed.
 
-Release gates use conservative median-sample ratios. Printed benchmark tables
-show best samples for readability.
+Release gates use conservative median-sample ratios plus absolute median caps
+on default benchmark sizes. Printed benchmark tables show best samples for
+readability.
 
 ## API Preference
 
@@ -197,6 +210,10 @@ api.frameLoop("gameplay:systems", runGameplaySystems);
 api.applyEffect("autosave", autosaveEffect, "skip");
 api.tick(performance.now());
 ```
+
+`frameLoop` callbacks must return `true` to continue and `false` to stop. Do
+not use an omitted return as "continue"; 0.2 makes the continuation decision
+explicit to avoid accidental infinite loops.
 
 Use direct tasks for hot orchestration:
 
@@ -241,7 +258,9 @@ Insere owns:
 
 Inbound broad events should use `InsereMailbox`. Targeted script/entity events
 should use `InsereEventBus`. Use `notifyTo()` or `publishTo()` for listener hot
-paths, and `waitBusEvent()` only when a task must suspend until the next event.
+paths, `waitUniqueBusEvent()` / `emitUniqueTo()` when the host guarantees one
+suspended waiter per key, and `waitBusEvent()` only when a task needs the full
+multi-waiter keyed event semantics.
 
 ## Release Discipline
 

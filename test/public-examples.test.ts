@@ -63,6 +63,8 @@ describe("public examples", () => {
       if (ctx.frame > 1) {
         return false;
       }
+
+      return true;
     });
 
     api.tick(0);
@@ -81,6 +83,7 @@ describe("public examples", () => {
 
     type AppEvent =
       | { readonly type: "commitPointer"; readonly event: HostEvent }
+      | { readonly type: "scriptEvent"; readonly event: HostEvent }
       | { readonly type: "taskFailed"; readonly failure: unknown };
 
     const events: AppEvent[] = [];
@@ -114,8 +117,14 @@ describe("public examples", () => {
       ctx.waitFrame();
     });
 
+    host.api.applyEffect("entity:42:next-hit", function* (ctx) {
+      const event = yield* host.waitUniqueBusEvent("entity:42")(ctx);
+      yield* dispatch<AppEvent>({ type: "scriptEvent", event })(ctx);
+    });
+
     host.emit({ type: "pointerup", x: 12, y: 20 });
     host.notifyTo("entity:42", { type: "damage", amount: 3 });
+    host.emitUniqueTo("entity:42", { type: "damage", amount: 10 });
     await Promise.resolve();
     host.tick(16);
 
@@ -123,6 +132,10 @@ describe("public examples", () => {
       {
         type: "commitPointer",
         event: { type: "pointerup", x: 12, y: 20 }
+      },
+      {
+        type: "scriptEvent",
+        event: { type: "damage", amount: 10 }
       }
     ]);
     expect(seen).toEqual([{ type: "damage", amount: 3 }]);

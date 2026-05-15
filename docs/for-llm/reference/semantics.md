@@ -204,8 +204,8 @@ Direct tasks use callbacks instead of yielded instructions:
 - `waitFrame(key, step)` registers a task that is already waiting for the next
   host tick.
 - `frameLoop(key, step)` registers a system-level frame loop. It starts on the
-  next host tick, waits for the following frame automatically, and stops when
-  the callback returns `false`.
+  next host tick, waits for the following frame automatically when the callback
+  returns `true`, and stops when the callback returns `false`.
 - `ctx.waitFrame()`, `ctx.waitIdle()`, `ctx.sleep(ms)`, and
   `ctx.sleepUntil(time)` suspend the callback until a later host action.
 - `ctx.complete()` marks the task complete. A direct task also completes when
@@ -246,15 +246,20 @@ The framework layer adds first-class host concerns:
 - `mailbox.emit(event)` broadcasts to every matching waiter.
 - `mailbox.emitOne(event)` consumes only the first matching waiter.
 - `InsereEventBus` supports keyed inbound events through `emitTo`,
-  `waitBusEvent`, `subscribeTo`, and listener-only `publishTo`.
+  `waitBusEvent`, `waitUniqueBusEvent`, `subscribeTo`, and listener-only
+  `publishTo`.
+- `waitUniqueBusEvent` / `emitUniqueTo` are a narrower contract: at most one
+  suspended waiter may exist for a key, duplicate unique waits reject, and
+  unique emits do not deliver listeners or buffer missed events.
 - `InsereHostAdapter` combines one `InsereApi`, one mailbox, and one host
   clock.
 - Supervision is explicit and separate from task application policy.
 
 Supervision policies:
 
-- `bubble`: rethrow the original failure.
-- `logAndStop`: record the failure and leave the failed task stopped.
+- `bubble`: explicitly rethrow the original failure after reporting.
+- `logAndStop`: record the failure and leave the failed task stopped. This is
+  the default isolation policy.
 - `dispatchAndStop`: convert failure into a host event.
 - `convertToResult`: report a failed Result carrying `InsereFailure` to the
   host.
@@ -262,7 +267,8 @@ Supervision policies:
 
 `restart` supervision is bounded and only works for tasks started through the
 API facade, because the facade owns the callback/effect needed to recreate the
-task.
+task. After the restart limit is exhausted, the failed task remains stopped and
+the API returns a failed Result.
 
 ## Keyed Supersession
 

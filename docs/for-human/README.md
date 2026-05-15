@@ -81,7 +81,11 @@ api.applyEffect(
 - `cancelGroup("asset:")` cancels all matching keyed work.
 - Direct tasks are the hot path.
 - Effects are the expressive path.
+- `waitUniqueBusEvent()` is for keyed inbound events with at most one suspended
+  waiter; use `notifyTo()` for hot fire-and-forget listener callbacks.
 - Logging is structured and disabled logging is a fast no-op.
+- API `tick()` isolates task failures by default and returns a failed Result;
+  use explicit `bubble` supervision when development builds should rethrow.
 
 ## Release Check
 

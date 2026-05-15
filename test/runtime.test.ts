@@ -312,8 +312,10 @@ describe("Insere", () => {
   });
 
   it("does not let failure reporters prevent routine cleanup", () => {
+    const failures: string[] = [];
     const insere = new Insere({
-      onFailure: () => {
+      onFailure: (failure) => {
+        failures.push(failure.key ?? "");
         throw new Error("report failed");
       }
     });
@@ -323,7 +325,32 @@ describe("Insere", () => {
       throw new Error("routine failed");
     });
 
-    expect(() => insere.tick(1)).toThrow("routine failed");
+    expect(() => insere.tick(1)).not.toThrow();
     expect(insere.has("broken")).toBe(false);
+    expect(failures).toEqual(["broken"]);
+  });
+
+  it("continues later routines after one routine fails", () => {
+    const events: string[] = [];
+    const failures: string[] = [];
+    const insere = new Insere({
+      dispatch: (event: string) => events.push(event),
+      onFailure: (failure) => failures.push(failure.key ?? "")
+    });
+
+    insere.restart("broken", function* () {
+      yield frame();
+      throw new Error("routine failed");
+    });
+    insere.restart("healthy", function* (ctx) {
+      yield frame();
+      ctx.dispatch("healthy");
+    });
+
+    insere.tick(1);
+
+    expect(failures).toEqual(["broken"]);
+    expect(events).toEqual(["healthy"]);
+    expect(insere.size).toBe(0);
   });
 });

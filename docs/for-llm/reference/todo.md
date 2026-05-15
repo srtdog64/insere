@@ -72,9 +72,10 @@ These items are now designed and implemented in the core API:
   bug logging for duplicate spawn, invalid task specs, uncaught task failures,
   cancellation/restart failures, and host-provided `requestId` trace ids.
 - Framework layer: `InsereHostAdapter`, `InsereMailbox`, `waitEvent`,
-  `InsereEventBus`, `waitBusEvent`, listener-only `publish`, `abortable`, and
-  explicit supervision policy with `bubble`, `logAndStop`, `dispatchAndStop`,
-  `convertToResult`, and bounded `restart`.
+  `InsereEventBus`, `waitBusEvent`, `waitUniqueBusEvent`, `emitUnique`,
+  listener-only `publish`, `abortable`, and explicit supervision policy with
+  `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`, and bounded
+  `restart`.
 - Throw boundary audit: `docs/for-llm/reference/throw-boundaries.md` documents which APIs must
   return `InsereResult` and which low-level/runtime boundaries intentionally
   throw.
@@ -217,8 +218,8 @@ and then applies explicit supervision policy.
 
 Implemented supervision policies:
 
-- `bubble`: current behavior
-- `logAndStop`: report failure and remove routine
+- `bubble`: explicit development policy that rethrows after reporting
+- `logAndStop`: default policy; report failure and remove routine
 - `dispatchAndStop`: dispatch `{ type: "taskFailed" }`
 - `restart`: explicit bounded restart policy
 - `convertToResult`: use `attempt`/`InsereResult` to expose failure as a host
@@ -226,7 +227,7 @@ Implemented supervision policies:
 
 Constraints:
 
-- No invisible retry by default; `bubble` is the default.
+- No invisible retry by default; `logAndStop` is the default isolation policy.
 - Restart has a bounded `maxRestarts` policy.
 - Host logging receives key, frame, now, delta, operation, policy when
   relevant, wait state when reported by the runtime, and cause.

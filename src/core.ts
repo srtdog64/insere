@@ -1,19 +1,16 @@
+import { InsereClock } from "./clock.js";
+import type {
+  InsereBaseContext,
+  InsereCancellationContext
+} from "./context.js";
 import type { InsereFailure } from "./supervision.js";
 
 export type DirectInsereDispatch<TEvent = unknown> = (event: TEvent) => void;
 export type DirectInsereStateReader<TState = unknown> = () => TState;
 export type DirectInsereWaitKind = "ready" | "frame" | "idle" | "delay";
 
-export interface DirectInsereContext<TState = unknown, TEvent = unknown> {
-  readonly key: string;
-  readonly frame: number;
-  readonly now: number;
-  readonly delta: number;
-  readonly signal: AbortSignal;
-  dispatch(event: TEvent): void;
-  getState(): TState;
-  onCancel(cleanup: () => void): () => void;
-  throwIfCancelled(): void;
+export interface DirectInsereContext<TState = unknown, TEvent = unknown>
+  extends InsereBaseContext<TState, TEvent>, InsereCancellationContext {
   waitFrame(): void;
   waitIdle(): void;
   sleep(ms: number): void;
@@ -27,7 +24,7 @@ export type DirectInsereStep<TState = unknown, TEvent = unknown> = (
 
 export type DirectInsereFrameLoopStep<TState = unknown, TEvent = unknown> = (
   context: DirectInsereContext<TState, TEvent>
-) => void | boolean;
+) => boolean;
 
 export interface DirectInsereOptions<TState = unknown, TEvent = unknown> {
   readonly dispatch?: DirectInsereDispatch<TEvent>;
@@ -50,11 +47,12 @@ export interface DirectInsereSnapshot {
 
 interface Entry<TState, TEvent> {
   readonly key: string;
+  index: number;
   step: DirectInsereStep<TState, TEvent>;
   readonly groups: string[] | undefined;
   aborted: boolean;
   controller: AbortController | undefined;
-  finalizers: (() => void) | Set<() => void> | undefined;
+  finalizers: (() => void) | (() => void)[] | undefined;
   queuedFrame: boolean;
   wait: DirectInsereWaitKind | "done";
   waitFrame: number;
@@ -63,20 +61,19 @@ interface Entry<TState, TEvent> {
 
 export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   readonly #entries = new Map<string, Entry<TState, TEvent>>();
+  readonly #entryList: Entry<TState, TEvent>[] = [];
   readonly #groups = new Map<string, Set<string>>();
   readonly #context: DirectInsereContext<TState, TEvent>;
   readonly #dispatch: DirectInsereDispatch<TEvent>;
   readonly #getState: DirectInsereStateReader<TState>;
   readonly #onFailure: ((failure: InsereFailure) => void) | undefined;
   #frameQueue: Entry<TState, TEvent>[] = [];
+  #nextFrameQueue: Entry<TState, TEvent>[] = [];
   #queuedFrameCount = 0;
   #structureVersion = 0;
   #activeEntry: Entry<TState, TEvent> | undefined;
   #soleEntry: Entry<TState, TEvent> | undefined;
-  #frame = 0;
-  #now = 0;
-  #previousNow = 0;
-  #delta = 0;
+  readonly #clock = new InsereClock();
 
   constructor(options: DirectInsereOptions<TState, TEvent> = {}) {
     this.#dispatch = options.dispatch ?? (() => undefined);
@@ -90,15 +87,15 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   }
 
   get frame(): number {
-    return this.#frame;
+    return this.#clock.frame;
   }
 
   get now(): number {
-    return this.#now;
+    return this.#clock.now;
   }
 
   get delta(): number {
-    return this.#delta;
+    return this.#clock.delta;
   }
 
   has(key: string): boolean {
@@ -111,11 +108,11 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
 
   snapshot(): DirectInsereSnapshot {
     return {
-      frame: this.#frame,
-      now: this.#now,
-      delta: this.#delta,
+      frame: this.#clock.frame,
+      now: this.#clock.now,
+      delta: this.#clock.delta,
       size: this.#entries.size,
-      entries: [...this.#entries.values()].map((entry) => ({
+      entries: this.#entryList.map((entry) => ({
         key: entry.key,
         wait: entry.wait === "done" ? "ready" : entry.wait
       }))
@@ -173,7 +170,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
 
     const entry = this.#createEntry(key, step);
     entry.wait = "frame";
-    entry.waitFrame = this.#frame;
+    entry.waitFrame = this.#clock.frame;
     this.#setEntry(entry);
     this.#queueFrame(entry);
   }
@@ -237,8 +234,8 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
     }
 
     let allMatch = true;
-    for (const key of this.#entries.keys()) {
-      if (!key.startsWith(prefix)) {
+    for (let index = 0; index < this.#entryList.length; index += 1) {
+      if (!this.#entryList[index]!.key.startsWith(prefix)) {
         allMatch = false;
         break;
       }
@@ -250,12 +247,17 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
 
     let count = 0;
 
-    for (const [key, entry] of this.#entries) {
-      if (key.startsWith(prefix)) {
+    const entries = this.#entryList;
+    for (let index = 0; index < entries.length;) {
+      const entry = entries[index]!;
+
+      if (entry.key.startsWith(prefix)) {
         this.#cancelEntry(entry);
         this.#deleteEntry(entry);
         this.#runFinalizers(entry);
         count += 1;
+      } else if (entries[index] === entry) {
+        index += 1;
       }
     }
 
@@ -267,28 +269,25 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   }
 
   tick(now: number): void {
-    if (!Number.isFinite(now)) {
-      throw new RangeError(`Invalid tick time: ${now}`);
-    }
-
-    this.#previousNow = this.#now;
-    this.#now = now;
-    this.#delta = this.#frame === 0 ? 0 : now - this.#previousNow;
-    this.#frame += 1;
+    this.#clock.advance(now);
 
     if (this.#frameQueue.length > 0) {
       const frameQueue = this.#frameQueue;
+      const nextFrameQueue = this.#nextFrameQueue;
       const onlyFrameWaiters = this.#queuedFrameCount === this.#entries.size;
       const structureVersion = this.#structureVersion;
       const entryCount = this.#entries.size;
       let doneCount = 0;
-      this.#frameQueue = [];
+      nextFrameQueue.length = 0;
+      this.#frameQueue = nextFrameQueue;
+      this.#nextFrameQueue = frameQueue;
 
-      for (const entry of frameQueue) {
+      for (let index = 0; index < frameQueue.length; index += 1) {
+        const entry = frameQueue[index]!;
         if (
           entry.queuedFrame &&
           entry.wait === "frame" &&
-          this.#frame > entry.waitFrame
+          this.#clock.frame > entry.waitFrame
         ) {
           this.#unqueueFrame(entry);
           this.#run(entry, !onlyFrameWaiters);
@@ -308,12 +307,17 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
           doneCount === entryCount &&
           this.#structureVersion === structureVersion
         ) {
+          for (let index = 0; index < this.#entryList.length; index += 1) {
+            this.#entryList[index]!.index = -1;
+          }
           this.#entries.clear();
+          this.#entryList.length = 0;
           this.#groups.clear();
           this.#soleEntry = undefined;
           this.#structureVersion += 1;
         } else {
-          for (const entry of frameQueue) {
+          for (let index = 0; index < frameQueue.length; index += 1) {
+            const entry = frameQueue[index]!;
             const wait = entry.wait as DirectInsereWaitKind | "done";
 
             if (wait === "done") {
@@ -322,8 +326,11 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
           }
         }
 
+        frameQueue.length = 0;
         return;
       }
+
+      frameQueue.length = 0;
     }
 
     if (this.#soleEntry) {
@@ -331,8 +338,13 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       return;
     }
 
-    for (const entry of this.#entries.values()) {
+    const entries = this.#entryList;
+    for (let index = 0; index < entries.length;) {
+      const entry = entries[index]!;
       this.#runIfReady(entry);
+      if (entries[index] === entry) {
+        index += 1;
+      }
     }
   }
 
@@ -344,9 +356,14 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       return;
     }
 
-    for (const entry of this.#entries.values()) {
+    const entries = this.#entryList;
+    for (let index = 0; index < entries.length;) {
+      const entry = entries[index]!;
       if (entry.wait === "idle") {
         this.#run(entry);
+      }
+      if (entries[index] === entry) {
+        index += 1;
       }
     }
   }
@@ -357,6 +374,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   ): Entry<TState, TEvent> {
     return {
       key,
+      index: -1,
       step,
       groups: this.#groupPrefixes(key),
       aborted: false,
@@ -377,13 +395,13 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         return runtime.#activeEntry?.key ?? "";
       },
       get frame() {
-        return runtime.#frame;
+        return runtime.#clock.frame;
       },
       get now() {
-        return runtime.#now;
+        return runtime.#clock.now;
       },
       get delta() {
-        return runtime.#delta;
+        return runtime.#clock.delta;
       },
       get signal() {
         const entry = runtime.#activeEntry;
@@ -410,9 +428,9 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         if (!entry.finalizers) {
           entry.finalizers = cleanup;
         } else if (typeof entry.finalizers === "function") {
-          entry.finalizers = new Set([entry.finalizers, cleanup]);
+          entry.finalizers = [entry.finalizers, cleanup];
         } else {
-          entry.finalizers.add(cleanup);
+          entry.finalizers.push(cleanup);
         }
 
         return () => {
@@ -421,8 +439,11 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
             return;
           }
 
-          if (entry.finalizers && typeof entry.finalizers !== "function") {
-            entry.finalizers.delete(cleanup);
+          if (Array.isArray(entry.finalizers)) {
+            const index = entry.finalizers.indexOf(cleanup);
+            if (index !== -1) {
+              entry.finalizers.splice(index, 1);
+            }
           }
         };
       },
@@ -443,7 +464,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         }
 
         entry.wait = "frame";
-        entry.waitFrame = this.#frame;
+        entry.waitFrame = this.#clock.frame;
         runtime.#queueFrame(entry);
       },
       waitIdle: () => {
@@ -465,7 +486,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         }
 
         entry.wait = "delay";
-        entry.wakeAt = this.#now + ms;
+        entry.wakeAt = this.#clock.now + ms;
       },
       sleepUntil: (time) => {
         if (!Number.isFinite(time)) {
@@ -497,7 +518,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         this.#run(entry);
         return;
       case "frame":
-        if (this.#frame > entry.waitFrame) {
+        if (this.#clock.frame > entry.waitFrame) {
           this.#unqueueFrame(entry);
           this.#run(entry);
         }
@@ -505,7 +526,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       case "idle":
         return;
       case "delay":
-        if (this.#now >= entry.wakeAt) {
+        if (this.#clock.now >= entry.wakeAt) {
           this.#run(entry);
         }
         return;
@@ -536,7 +557,6 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       this.#reportFailure(entry, wait, error);
       this.#cancelEntry(entry);
       this.#deleteEntry(entry);
-      throw error;
     }
   }
 
@@ -558,10 +578,8 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       if (typeof finalizers === "function") {
         finalizers();
       } else {
-        const callbacks = [...finalizers].reverse();
-
-        for (const cleanup of callbacks) {
-          cleanup();
+        for (let index = finalizers.length - 1; index >= 0; index -= 1) {
+          finalizers[index]!();
         }
       }
     } finally {
@@ -571,8 +589,10 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
 
   #setEntry(entry: Entry<TState, TEvent>): void {
     this.#entries.set(entry.key, entry);
+    entry.index = this.#entryList.length;
+    this.#entryList.push(entry);
     this.#addGroups(entry);
-    this.#soleEntry = this.#entries.size === 1 ? entry : undefined;
+    this.#soleEntry = this.#entryList.length === 1 ? entry : undefined;
     this.#structureVersion += 1;
   }
 
@@ -583,16 +603,25 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
 
     this.#unqueueFrame(entry);
     this.#entries.delete(entry.key);
+    const index = entry.index;
+    const last = this.#entryList.pop();
+
+    if (last && last !== entry) {
+      this.#entryList[index] = last;
+      last.index = index;
+    }
+
+    entry.index = -1;
     this.#removeGroups(entry);
     this.#structureVersion += 1;
 
-    if (this.#entries.size === 0) {
+    if (this.#entryList.length === 0) {
       this.#soleEntry = undefined;
       return;
     }
 
-    if (this.#entries.size === 1) {
-      this.#soleEntry = this.#entries.values().next().value;
+    if (this.#entryList.length === 1) {
+      this.#soleEntry = this.#entryList[0];
       return;
     }
 
@@ -602,15 +631,19 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
   #cancelAllEntries(): number {
     const count = this.#entries.size;
 
-    for (const entry of this.#entries.values()) {
+    for (let index = 0; index < this.#entryList.length; index += 1) {
+      const entry = this.#entryList[index]!;
       this.#cancelEntry(entry);
       this.#unqueueFrame(entry);
       this.#runFinalizers(entry);
+      entry.index = -1;
     }
 
     this.#entries.clear();
+    this.#entryList.length = 0;
     this.#groups.clear();
-    this.#frameQueue = [];
+    this.#frameQueue.length = 0;
+    this.#nextFrameQueue.length = 0;
     this.#queuedFrameCount = 0;
     this.#soleEntry = undefined;
     this.#structureVersion += 1;
@@ -711,13 +744,13 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
         operation: "task",
         key: entry.key,
         wait,
-        frame: this.#frame,
-        now: this.#now,
-        delta: this.#delta,
+        frame: this.#clock.frame,
+        now: this.#clock.now,
+        delta: this.#clock.delta,
         cause
       });
     } catch {
-      // Failure reporters must not prevent task cleanup or rethrow semantics.
+      // Failure reporters must not prevent task cleanup or isolation semantics.
     }
   }
 }
@@ -726,7 +759,7 @@ export function frameLoopStep<TState, TEvent>(
   step: DirectInsereFrameLoopStep<TState, TEvent>
 ): DirectInsereStep<TState, TEvent> {
   return (context) => {
-    if (step(context) !== false) {
+    if (step(context)) {
       context.waitFrame();
     }
   };

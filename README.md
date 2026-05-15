@@ -90,7 +90,7 @@ api.waitFrame("drag:preview", () => {
 });
 
 api.frameLoop("gameplay:systems", (ctx) => {
-  // run one system-level frame loop; return false to stop
+  // run one system-level frame loop; return true to continue, false to stop
   return scene.isRunning;
 });
 
@@ -144,6 +144,11 @@ host.api.applyDirect("entity:42:events", (ctx) => {
 
 host.emit({ type: "pointerup", x: 12, y: 20 });
 host.notifyTo("entity:42", { type: "damage", amount: 3 });
+host.api.applyEffect("entity:42:next-hit", function* (ctx) {
+  const event = yield* host.waitUniqueBusEvent("entity:42")(ctx);
+  ctx.dispatch({ type: "script:hit", event });
+});
+host.emitUniqueTo("entity:42", { type: "damage", amount: 10 });
 host.tick(performance.now());
 ```
 
@@ -165,6 +170,9 @@ yielded back to that host clock.
 - `restart(key, routine)` aborts the previous routine in the same key slot.
 - Promise support exists only as an I/O bridge, not as the default execution
   model.
+- The API facade isolates uncaught task failures by default, reports them as
+  `InsereResult` failures from `tick()` / `runIdle()`, and keeps explicit
+  `bubble` supervision available for development rethrow behavior.
 
 Effect helpers cover the small composition surface:
 
@@ -191,8 +199,9 @@ Effect helpers cover the small composition surface:
   `createBufferedInsereLogger` for bug records at the API boundary; disabled
   logging is a fast no-op and does not read `requestId`
 - framework layer: `createInsereHostAdapter`, `InsereMailbox`, `waitEvent`,
-  `InsereEventBus`, `waitBusEvent`, listener-only `publish`/`notify`, and
-  explicit supervision policy for large host applications
+  `InsereEventBus`, `waitBusEvent`, `waitUniqueBusEvent`, `emitUnique`,
+  listener-only `publish`/`notify`, and explicit supervision policy for large
+  host applications
 
 Runtime state stays observable without taking ownership away from the host:
 `size`, `frame`, `now`, `has(key)`, `keys()`, and `snapshot()` report the
@@ -219,7 +228,7 @@ Poor fits:
 
 ## Status
 
-Version `0.1.0` is a public pre-release. The core scheduler, API facade,
+Version `0.2.0` is a public pre-release. The core scheduler, API facade,
 logging, supervision, mailbox, and benchmark gates are usable, but the API
 should still be treated as experimental until real host dogfood stabilizes it.
 

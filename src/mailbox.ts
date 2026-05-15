@@ -14,6 +14,9 @@ export interface InsereMailboxWaitOptions {
   readonly signal?: AbortSignal;
 }
 
+type ResolveFn<TEvent> = (event: TEvent) => void;
+type WaiterSlot<TEvent> = ResolveFn<TEvent> | Waiter<TEvent> | undefined;
+
 interface Waiter<TEvent> {
   match: InsereEventMatcher<TEvent> | undefined;
   resolve: (event: TEvent) => void;
@@ -28,7 +31,7 @@ export class InsereMailbox<TEvent = unknown> {
   readonly #capacity: number;
   readonly #overflow: InsereMailboxOverflowPolicy;
   readonly #events: TEvent[] = [];
-  #waiters: Waiter<TEvent>[] = [];
+  #waiters: WaiterSlot<TEvent>[] = [];
   #waiterHead = 0;
   #activeWaiters = 0;
   #removedWaiters = 0;
@@ -75,6 +78,16 @@ export class InsereMailbox<TEvent = unknown> {
 
     for (let i = this.#waiterHead; i < length; i += 1) {
       const waiter = waiters[i]!;
+
+      if (waiter === undefined) {
+        continue;
+      }
+
+      if (typeof waiter === "function") {
+        this.#resolveWaiter(waiter, event);
+        delivered += 1;
+        continue;
+      }
 
       if (waiter.removed) {
         continue;
@@ -126,6 +139,18 @@ export class InsereMailbox<TEvent = unknown> {
     for (let index = this.#waiterHead; index < length; index += 1) {
       const waiter = waiters[index]!;
 
+      if (waiter === undefined) {
+        continue;
+      }
+
+      if (typeof waiter === "function") {
+        waiters[index] = undefined;
+        this.#resolveWaiter(waiter, event);
+        this.#advanceWaiterHead(index);
+        this.#compactWaitersIfSparse();
+        return 1;
+      }
+
       if (waiter.removed) {
         continue;
       }
@@ -147,7 +172,7 @@ export class InsereMailbox<TEvent = unknown> {
 
   wait(
     match?: InsereEventMatcher<TEvent>,
-    options: InsereMailboxWaitOptions = {}
+    options?: InsereMailboxWaitOptions
   ): Promise<TEvent> {
     if (this.#events.length > 0) {
       if (match === undefined) {
@@ -162,9 +187,16 @@ export class InsereMailbox<TEvent = unknown> {
       }
     }
 
-    const { signal } = options;
+    const signal = options?.signal;
     if (signal?.aborted) {
       return Promise.reject(this.#abortError());
+    }
+
+    if (match === undefined && signal === undefined) {
+      return new Promise<TEvent>((resolve) => {
+        this.#waiters.push(resolve);
+        this.#activeWaiters += 1;
+      });
     }
 
     return new Promise<TEvent>((resolve, reject) => {
@@ -234,7 +266,14 @@ export class InsereMailbox<TEvent = unknown> {
     }
   }
 
-  #resolveWaiter(waiter: Waiter<TEvent>, event: TEvent): void {
+  #resolveWaiter(waiter: ResolveFn<TEvent> | Waiter<TEvent>, event: TEvent): void {
+    if (typeof waiter === "function") {
+      this.#activeWaiters -= 1;
+      this.#removedWaiters += 1;
+      waiter(event);
+      return;
+    }
+
     waiter.removed = true;
     this.#activeWaiters -= 1;
     this.#removedWaiters += 1;
@@ -272,7 +311,7 @@ export class InsereMailbox<TEvent = unknown> {
     for (let index = this.#waiterHead; index < waiters.length; index += 1) {
       const waiter = waiters[index]!;
 
-      if (waiter.removed) {
+      if (waiter === undefined || (typeof waiter !== "function" && waiter.removed)) {
         continue;
       }
 
@@ -301,7 +340,7 @@ export class InsereMailbox<TEvent = unknown> {
     const waiters = this.#waiters;
     let next = index + 1;
 
-    while (next < waiters.length && waiters[next]!.removed) {
+    while (next < waiters.length && isRemovedWaiterSlot(waiters[next])) {
       next += 1;
     }
 
@@ -311,6 +350,10 @@ export class InsereMailbox<TEvent = unknown> {
   #abortError(): DOMException {
     return new DOMException("Insere mailbox wait was cancelled.", "AbortError");
   }
+}
+
+function isRemovedWaiterSlot<TEvent>(slot: WaiterSlot<TEvent>): boolean {
+  return slot === undefined || (typeof slot !== "function" && slot.removed);
 }
 
 export function createInsereMailbox<TEvent = unknown>(

@@ -19,6 +19,7 @@ host clock -> DirectInsereTask.tick(now) -> runnable direct tasks
 
 ```txt
 api facade
+clock
 direct task core
 task declarations -> effects -> routines -> runtime -> instructions
 ```
@@ -26,6 +27,9 @@ task declarations -> effects -> routines -> runtime -> instructions
 - `api` provides `InsereApi` and `InsereApiScope`, the recommended facade for
   host adapters. It joins the direct and effect runtimes behind one clock,
   one key space, one scope model, and one policy Result reporting shape.
+- `clock` provides the shared internal host-clock layer. It owns the `frame`,
+  `now`, and `delta` advancement contract used by both direct and generator
+  runtimes.
 - `core` provides `DirectInsereTask`, a no-Promise and no-generator scheduler
   for hot keyed orchestration. It owns direct task slots, lazy cancellation,
   frame queues, `:` boundary prefix indexes, host-clock advancement, and
@@ -54,8 +58,9 @@ task declarations -> effects -> routines -> runtime -> instructions
   supervision policy, and structured logging.
 - `mailbox` provides `InsereMailbox` and `waitEvent` for cancellable inbound
   event waits with explicit buffering.
-- `event-bus` provides `InsereEventBus` and `waitBusEvent` for targeted keyed
-  inbound events, cancellable keyed waits, and listener-only `publish` calls.
+- `event-bus` provides `InsereEventBus`, `waitBusEvent`, and
+  `waitUniqueBusEvent` for targeted keyed inbound events, cancellable keyed
+  waits, unique-key waits, and listener-only `publish` calls.
 - `supervision` defines `InsereFailure` and the post-failure policies:
   `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`, and bounded
   `restart`.

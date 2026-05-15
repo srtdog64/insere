@@ -8,7 +8,8 @@ import {
   currentDelta,
   frameLoopStep,
   dispatch,
-  waitEvent
+  waitEvent,
+  waitUniqueBusEvent
 } from "../dist/index.js";
 import {
   createInsereApi,
@@ -99,6 +100,14 @@ if ((await eventBus.wait("key")) !== "ready") {
   throw new Error("Event bus did not return buffered event.");
 }
 
+const uniqueEventBus = createInsereEventBus();
+const uniqueWait = uniqueEventBus.waitUnique("key");
+uniqueEventBus.emitUnique("key", "unique");
+
+if ((await uniqueWait) !== "unique") {
+  throw new Error("Event bus unique wait did not resolve.");
+}
+
 const hostEvents = [];
 const host = createInsereHostAdapter({
   dispatch: (event) => hostEvents.push(event)
@@ -114,6 +123,18 @@ host.tick(1);
 
 if (hostEvents[0] !== "commit") {
   throw new Error("Host adapter mailbox did not dispatch.");
+}
+
+host.api.applyEffect("unique-input", function* (ctx) {
+  const event = yield* waitUniqueBusEvent(host.eventBus, "entity:1")(ctx);
+  yield* dispatch(`unique:${event}`)(ctx);
+});
+host.emitUniqueTo("entity:1", "commit");
+await Promise.resolve();
+host.tick(2);
+
+if (!hostEvents.includes("unique:commit")) {
+  throw new Error("Host adapter unique event bus did not dispatch.");
 }
 
 const hostConsume = createInsereHostAdapter({

@@ -127,6 +127,12 @@ Use mailbox predicates for broad host events. Use event bus keys for targeted
 script/entity events. Use `waitBusEvent()` only when the task should suspend
 until the next matching event.
 
+Use `waitUniqueBusEvent()` / `emitUniqueTo()` when the host contract guarantees
+at most one suspended waiter for a key. This is the dedicated unique-key path:
+it does not deliver listeners, does not buffer, and does not support multiple
+waiters for the same key. Duplicate `waitUnique` registration rejects rather
+than replacing the first waiter.
+
 `emitTo()` is the full event-bus path: it delivers listeners, resumes keyed
 waiters, and applies buffering when nobody receives the event. `publishTo()` is
 the listener-only path when callers need a delivered count. `notifyTo()` is the
@@ -140,8 +146,8 @@ fallible work inside an Insere task when it should use supervision.
 ## Frame Loops
 
 Use `frameLoop()` for Geukbit-style gameplay, animation, or projection phases
-where one system owns many entities. The loop starts on the next host tick and
-continues until the callback returns `false`.
+where one system owns many entities. The loop starts on the next host tick.
+Return `true` to continue on the next frame and `false` to stop.
 
 ```ts
 host.api.frameLoop("gameplay:systems", (ctx) => {
@@ -170,11 +176,23 @@ Task policy decides how work starts:
 Supervision decides what happens after uncaught failure:
 
 - `bubble`: rethrow the original failure
-- `logAndStop`: log/report and keep the failed task stopped
+- `logAndStop`: log/report and keep the failed task stopped; this is the
+  default isolation policy
 - `dispatchAndStop`: convert failure to a host event
 - `convertToResult`: send a failed Result carrying `InsereFailure` to
   `onResult`
 - `restart`: restart a remembered task up to `maxRestarts`
+
+When a task fails during `tick()` or `runIdle()`, the lower runtime catches the
+failure, removes the failed task, and reports `InsereFailure` to the API
+facade. The facade applies supervision and returns a failed Result unless an
+explicit `bubble` policy rethrows. One failed task should not prevent unrelated
+runnable tasks from advancing in the same host step.
+
+Host-provided supervision callbacks are also isolated under non-`bubble`
+policies. If `toEvent`, host dispatch, or `onResult` throws while handling a
+task failure, Insere logs that callback failure as a bug and preserves the
+original task failure Result.
 
 Bounded restart only applies to tasks started through the API facade, because
 the facade remembers their source callback/effect. Escape hatches such as

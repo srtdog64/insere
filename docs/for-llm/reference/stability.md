@@ -1,6 +1,6 @@
 # Insere Stability
 
-Insere `0.1.0` is a public pre-release. The package is usable for dogfood, but
+Insere `0.2.0` is a public pre-release. The package is usable for dogfood, but
 the API is not declared stable yet.
 
 ## Package Boundary
@@ -78,6 +78,13 @@ Required P0 ratios:
 - cancel group: Insere at least `2x` faster than Map+AbortController
 - mixed cancel group: Insere at least `2x` faster than Map+AbortController
 
+Required P0 absolute median caps on the default benchmark sizes:
+
+- restart storm: Insere median at most `20ms`
+- frame continuation: Insere median at most `1.5ms`
+- cancel group: Insere median at most `2ms`
+- mixed cancel group: Insere median at most `5ms`
+
 Required Geukbit-scale ratios:
 
 - lifecycle cancel: Insere at least `1.5x` faster
@@ -86,6 +93,12 @@ Required Geukbit-scale ratios:
 - hot event publish-only and physics host-task paths must remain at least
   `0.5x` of their raw baseline, because those are near-plain-TypeScript
   comparison points.
+
+Required Geukbit-scale absolute median caps on the default benchmark sizes:
+
+- lifecycle cancel: Insere median at most `75ms`
+- gameplay system `frameLoop`: Insere median at most `2ms`
+- projection restart: Insere median at most `30ms`
 
 ## Compatibility Rules
 
@@ -97,7 +110,11 @@ avoid breaking these surfaces without an explicit version note:
 - task policy names: `spawn`, `restart`, `skip`
 - supervision policy names
 - direct context methods
+- direct `frameLoop` continuation contract: `true` continues, `false` stops
 - mailbox and event-bus buffering policy names
+- event-bus unique-key contract: `waitUnique` rejects duplicate pending waiters,
+  and `emitUnique` only resolves a unique waiter without listener delivery or
+  buffering
 
 Performance regressions should be treated as breaking for the P0 paths even
 when TypeScript types still compile. Tables report best samples for readability;

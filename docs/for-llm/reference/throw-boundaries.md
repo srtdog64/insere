@@ -33,7 +33,7 @@ Throws remain intentional in these cases:
   context access
 - cancellation injected into a running direct task or generator routine
 - generator `routine.throw(error)` propagation inside the effect runtime
-- default `bubble` supervision and exhausted bounded `restart` supervision
+- explicit `bubble` supervision
 - explicit overflow policies configured as `"throw"`
 - invalid initialization options such as non-positive buffer/logger limits
 - host-owned event listeners registered through `InsereEventBus.subscribe`.
@@ -42,7 +42,7 @@ Throws remain intentional in these cases:
   task supervision when listener work should be reported through Insere.
 
 Logger failures are not intentional throw boundaries. `logInsereBug` swallows
-logger exceptions so logging cannot hide the original task/runtime failure.
+logger exceptions so logging cannot hide the task/runtime failure Result.
 
 ## Audit Command
 

@@ -303,7 +303,7 @@ describe("Insere effect layer", () => {
     expect(events).toEqual(["failed"]);
   });
 
-  it("throws rejected promise effects when they are not captured", async () => {
+  it("isolates rejected promise effects when they are not captured", async () => {
     const insere = new Insere();
     let reject!: (error: Error) => void;
     const promise = new Promise<string>((_, failWith) => {
@@ -315,7 +315,7 @@ describe("Insere effect layer", () => {
     await promise.catch(() => undefined);
     await Promise.resolve();
 
-    expect(() => insere.tick(16)).toThrow("network");
+    expect(() => insere.tick(16)).not.toThrow();
     expect(insere.size).toBe(0);
   });
 
@@ -352,18 +352,16 @@ describe("Insere effect layer", () => {
     expect(events).toEqual(["work", "cleanup", "done"]);
   });
 
-  it("runs ensuring finalizers after failure before the error escapes", () => {
+  it("runs ensuring finalizers after isolated failure", () => {
     const events: string[] = [];
     const insere = new Insere<unknown, string>({
       dispatch: (event) => events.push(event)
     });
 
-    expect(() =>
-      insere.restart(
-        "ensure",
-        toRoutine(ensuring(fail(new Error("boom")), dispatch("cleanup")))
-      )
-    ).toThrow("boom");
+    insere.restart(
+      "ensure",
+      toRoutine(ensuring(fail(new Error("boom")), dispatch("cleanup")))
+    );
     expect(events).toEqual(["cleanup"]);
     expect(insere.size).toBe(0);
   });
@@ -394,18 +392,16 @@ describe("Insere effect layer", () => {
       dispatch: (event) => events.push(event)
     });
 
-    expect(() =>
-      insere.restart(
-        "resource",
-        toRoutine(
-          acquireUseRelease(
-            succeed("socket"),
-            () => fail(new Error("use failed")),
-            (resource) => dispatch(`release:${resource}`)
-          )
+    insere.restart(
+      "resource",
+      toRoutine(
+        acquireUseRelease(
+          succeed("socket"),
+          () => fail(new Error("use failed")),
+          (resource) => dispatch(`release:${resource}`)
         )
       )
-    ).toThrow("use failed");
+    );
     expect(events).toEqual(["release:socket"]);
   });
 
@@ -415,18 +411,16 @@ describe("Insere effect layer", () => {
       dispatch: (event) => events.push(event)
     });
 
-    expect(() =>
-      insere.restart(
-        "resource",
-        toRoutine(
-          acquireUseRelease(
-            fail(new Error("acquire failed")),
-            () => dispatch("use"),
-            () => dispatch("release")
-          )
+    insere.restart(
+      "resource",
+      toRoutine(
+        acquireUseRelease(
+          fail(new Error("acquire failed")),
+          () => dispatch("use"),
+          () => dispatch("release")
         )
       )
-    ).toThrow("acquire failed");
+    );
     expect(events).toEqual([]);
   });
 

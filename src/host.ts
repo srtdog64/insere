@@ -14,6 +14,7 @@ import {
   InsereEventBus,
   createInsereEventBus,
   waitBusEvent,
+  waitUniqueBusEvent,
   type InsereEventListener,
   type InsereEventBusOptions,
   type InsereEventBusSubscribeOptions
@@ -87,6 +88,10 @@ export class InsereHostAdapter<
     return this.eventBus.emit(key, event);
   }
 
+  emitUniqueTo(key: string, event: TInboundEvent): number {
+    return this.eventBus.emitUnique(key, event);
+  }
+
   publishTo(key: string, event: TInboundEvent): number {
     return this.eventBus.publish(key, event);
   }
@@ -97,6 +102,13 @@ export class InsereHostAdapter<
 
   waitBusEvent(key: string): InsereEffect<TState, TDispatchEvent, TInboundEvent> {
     return waitBusEvent<string, TInboundEvent, TState, TDispatchEvent>(
+      this.eventBus,
+      key
+    );
+  }
+
+  waitUniqueBusEvent(key: string): InsereEffect<TState, TDispatchEvent, TInboundEvent> {
+    return waitUniqueBusEvent<string, TInboundEvent, TState, TDispatchEvent>(
       this.eventBus,
       key
     );

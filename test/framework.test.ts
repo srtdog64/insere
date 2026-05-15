@@ -4,6 +4,7 @@ import {
   abortable,
   createBufferedInsereLogger,
   createInsereApi,
+  createInsereEventBus,
   createInsereHostAdapter,
   createInsereMailbox,
   dispatch,
@@ -148,6 +149,46 @@ describe("Insere framework layers", () => {
     expect(total).toBe(3);
   });
 
+  it("delivers unique event bus waits through the dedicated fast path", async () => {
+    const bus = createInsereEventBus<string, { readonly entity: number }>();
+    const wait = bus.waitUnique("entity:1");
+
+    expect(bus.waiters).toBe(1);
+    expect(bus.emitUnique("entity:1", { entity: 1 })).toBe(1);
+    expect(bus.waiters).toBe(0);
+    await expect(wait).resolves.toEqual({ entity: 1 });
+    expect(bus.emitUnique("entity:1", { entity: 2 })).toBe(0);
+  });
+
+  it("rejects duplicate unique event bus waits without replacing the first waiter", async () => {
+    const bus = createInsereEventBus<string, string>();
+    const first = bus.waitUnique("entity:1");
+
+    await expect(bus.waitUnique("entity:1")).rejects.toThrow(
+      "Insere event bus unique waiter already exists."
+    );
+    expect(bus.emitUnique("entity:1", "first")).toBe(1);
+    await expect(first).resolves.toBe("first");
+  });
+
+  it("exposes unique event bus effects from the host adapter", async () => {
+    const events: string[] = [];
+    const host = createInsereHostAdapter<unknown, string, string>({
+      dispatch: (event) => events.push(event)
+    });
+
+    host.api.applyEffect("script:event", function* (context) {
+      const event = yield* host.waitUniqueBusEvent("entity:1")(context);
+      yield* dispatch(event)(context);
+    });
+
+    expect(host.emitUniqueTo("entity:1", "commit")).toBe(1);
+    await Promise.resolve();
+    host.tick(1);
+
+    expect(events).toEqual(["commit"]);
+  });
+
   it("swallows task failures with logAndStop supervision", () => {
     const failures: string[] = [];
     const api = createInsereApi({
@@ -244,6 +285,54 @@ describe("Insere framework layers", () => {
     expect(failedKeys).toEqual(["broken"]);
   });
 
+  it("isolates dispatchAndStop supervision callback failures", () => {
+    const logs = createBufferedInsereLogger();
+    const api = createInsereApi({
+      logger: logs.logger,
+      supervision: {
+        policy: "dispatchAndStop",
+        toEvent: () => {
+          throw new Error("toEvent failed");
+        }
+      }
+    });
+
+    api.waitFrame("broken", () => {
+      throw new Error("boom");
+    });
+
+    const result = api.tick(1);
+
+    expect(result.ok).toBe(false);
+    expect(logs.records.some((record) =>
+      record.data?.["supervision"] === "dispatchAndStop"
+    )).toBe(true);
+  });
+
+  it("isolates convertToResult supervision callback failures", () => {
+    const logs = createBufferedInsereLogger();
+    const api = createInsereApi({
+      logger: logs.logger,
+      supervision: {
+        policy: "convertToResult",
+        onResult: () => {
+          throw new Error("result reporter failed");
+        }
+      }
+    });
+
+    api.waitFrame("broken", () => {
+      throw new Error("boom");
+    });
+
+    const result = api.tick(1);
+
+    expect(result.ok).toBe(false);
+    expect(logs.records.some((record) =>
+      record.data?.["supervision"] === "convertToResult"
+    )).toBe(true);
+  });
+
   it("restarts supervised tasks up to a bounded policy limit", () => {
     const events: string[] = [];
     let runs = 0;
@@ -274,7 +363,7 @@ describe("Insere framework layers", () => {
     expect(api.size).toBe(0);
   });
 
-  it("bubbles supervised restart failures after the restart limit", () => {
+  it("stops supervised restart failures after the restart limit", () => {
     const api = createInsereApi({
       supervision: {
         policy: "restart",
@@ -286,7 +375,10 @@ describe("Insere framework layers", () => {
       throw new Error("boom");
     });
 
-    expect(() => api.tick(1)).toThrow("boom");
+    const result = api.tick(1);
+
+    expect(result.ok).toBe(false);
+    expect(api.size).toBe(0);
   });
 
   it("validates supervision restart limits", () => {

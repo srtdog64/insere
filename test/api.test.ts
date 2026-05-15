@@ -315,7 +315,7 @@ describe("InsereApi", () => {
     });
   });
 
-  it("logs uncaught runtime bugs and rethrows the original error", () => {
+  it("logs uncaught runtime bugs and returns a failed tick Result", () => {
     const logs = createBufferedInsereLogger();
     const api = createInsereApi({ logger: logs.logger });
     const error = new Error("boom");
@@ -324,27 +324,68 @@ describe("InsereApi", () => {
       throw error;
     });
 
-    expect(() => api.tick(16)).toThrow(error);
+    const result = api.tick(16);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? undefined : result.error.cause).toBe(error);
     expect(logs.records).toHaveLength(1);
     expect(logs.records[0]).toMatchObject({
       level: "error",
       kind: "bug",
-      operation: "tick",
+      operation: "task",
       frame: 1,
       now: 16,
       delta: 0,
-      data: { tickNow: 16 },
       cause: error
     });
   });
 
-  it("does not let logger failures hide runtime failures", () => {
+  it("returns the first task failure while still ticking the other runtime", () => {
+    const events: string[] = [];
+    const api = createInsereApi<unknown, string>({
+      dispatch: (event) => events.push(event)
+    });
+    const error = new Error("direct failed");
+
+    api.waitFrame("direct:broken", () => {
+      throw error;
+    });
+    api.applyEffect("effect:healthy", sequence([
+      waitFrame(),
+      dispatch("effect")
+    ]));
+
+    const result = api.tick(1);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? undefined : result.error.cause).toBe(error);
+    expect(events).toEqual(["effect"]);
+    expect(api.size).toBe(0);
+  });
+
+  it("does not let logger failures hide runtime failure Results", () => {
     const original = new Error("task failed");
     const loggerFailure = new Error("logger failed");
     const api = createInsereApi({
       logger: () => {
         throw loggerFailure;
       }
+    });
+
+    api.waitFrame("broken", () => {
+      throw original;
+    });
+
+    const result = api.tick(1);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? undefined : result.error.cause).toBe(original);
+  });
+
+  it("keeps explicit bubble supervision available", () => {
+    const original = new Error("task failed");
+    const api = createInsereApi({
+      supervision: { policy: "bubble" }
     });
 
     api.waitFrame("broken", () => {

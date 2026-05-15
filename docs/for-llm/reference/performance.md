@@ -34,8 +34,8 @@ gate is not needed.
 
 The non-gate benchmark scripts print tables only. Tables report best samples.
 The `*:gate` scripts fail the process when conservative median-sample release
-ratios are missed. See [`stability.md`](stability.md) for the current gate
-thresholds.
+ratios or absolute median caps are missed. See [`stability.md`](stability.md)
+for the current gate thresholds.
 
 Default workloads:
 
@@ -46,22 +46,25 @@ Default workloads:
 - `INSERE_BENCH_RESULTS=1000000`
 - `INSERE_BENCH_REPEATS=11`
 
-## Latest Local Result
+## Representative Local Result
 
-Measured on 2026-05-15 with Node `v22.17.0` on Windows.
+Representative gate run measured on 2026-05-15 with Node `v22.17.0` on
+Windows. Benchmark samples vary by host load; the release contract is the gate
+thresholds, not the exact table values below.
 
 This run used `INSERE_BENCH_REPEATS=11`.
 
 | Scenario | Baseline | Insere | Baseline ops/s | Insere ops/s | Best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 144,697.66 | 16,153,523.08 | 6.19 | Insere 111.64x |
-| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 25,641,025.64 | 84,459,459.46 | 0.12 | Insere 3.29x |
-| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 149,695.89 | 62,617,407.64 | 0.16 | Insere 418.3x |
-| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 270,690.21 | 16,869,095.82 | 0.59 | Insere 62.32x |
-| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 25,641,025.64 | 26,185,550.81 | 3.82 | Insere 1.02x |
-| Result branch | Direct TS value branch | `InsereResult ok/match` | 179,006,157.81 | 128,279,135.4 | 7.8 | Baseline 1.4x |
-| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 14,277,555.68 | 11,184,431.27 | 0.89 | Baseline 1.28x |
-| Mailbox consume-one | Promise resolver queue | `InsereMailbox.emitOne` | 10,592,098.29 | 7,589,556.77 | 1.32 | Baseline 1.4x |
+| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 140,089.97 | 21,437,605.85 | 4.66 | Insere 153.03x |
+| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 23,062,730.63 | 60,060,060.06 | 0.17 | Insere 2.6x |
+| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 123,997.17 | 50,327,126.32 | 0.2 | Insere 405.87x |
+| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 277,726.09 | 18,014,772.11 | 0.56 | Insere 64.87x |
+| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 23,062,730.63 | 31,737,971.31 | 3.15 | Insere 1.38x |
+| Result branch | Direct TS value branch | `InsereResult ok/match` | 184,478,019.44 | 129,480,008.29 | 7.72 | Baseline 1.42x |
+| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 12,550,200.8 | 12,978,585.33 | 0.77 | Insere 1.03x |
+| Mailbox consume-one | Promise resolver queue | `InsereMailbox.emitOne` | 11,994,722.32 | 11,199,462.43 | 0.89 | Baseline 1.07x |
+| Script event bus unique targeted | Map keyed Promise event bus | `InsereEventBus.waitUnique` + `emitUnique` | 7,286,505.39 | 6,129,704.55 | 0.82 | Baseline 1.19x |
 
 ## Interpretation
 
@@ -69,15 +72,15 @@ Insere should be compared against the control-flow machinery it replaces, not
 against a bare synchronous branch:
 
 - Restart storm compares against Promise plus `Map`, `AbortController`,
-  cleanup, and latest-only guard. Direct Insere was about 112x faster.
+  cleanup, and latest-only guard. Direct Insere was about 153x faster.
 - Frame continuation measures tasks already waiting for the next host tick.
-  Direct Insere was about 3.3x faster than flushing equivalent
+  Direct Insere was about 2.6x faster than flushing equivalent
   `Promise.resolve` continuations.
 - Cancel group measures cancelling 10k keyed tasks by prefix. Direct Insere was
-  about 418x faster and completed in 0.16ms in this run.
+  about 406x faster and completed in 0.2ms in this run.
 - Mixed cancel group measures cancelling the `asset:` half of a runtime that
-  also contains `preview:` tasks. Direct Insere was about 62x faster and
-  completed in 0.59ms.
+  also contains `preview:` tasks. Direct Insere was about 65x faster and
+  completed in 0.56ms.
 - `InsereResult ok/match` remains slower than direct value branching. That path
   is not treated as a hot scheduling path.
 - `InsereMailbox` fanout is now near parity with a simple `EventTarget`
@@ -118,18 +121,18 @@ Run:
 npm run benchmark:geukbit
 ```
 
-Latest local result, measured on 2026-05-15 with Node `v22.17.0`:
+Representative local result, measured on 2026-05-15 with Node `v22.17.0`:
 
 | Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 112,437.88 | 833,500.03 | 12 | Insere 7.41x |
-| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,303,666.72 | 3,166,962.25 | 1.58 | Baseline 1.36x |
-| script event bus direct callbacks setup+publish | Map keyed callbacks | InsereEventBus publish | 7,411,799.58 | 7,168,458.78 | 0.7 | Baseline 1.03x |
-| script event bus direct callbacks publish-only | Map keyed callbacks hot publish | InsereEventBus hot publish | 19,654,088.05 | 19,538,882.38 | 0.26 | Baseline 1.01x |
-| gameplay tick per-entity tasks (discouraged) | Promise microtask gameplay | Insere per-entity direct gameplay | 14,318,442.15 | 3,430,924.06 | 8.74 | Baseline 4.17x |
-| gameplay tick system task | Promise microtask gameplay | Insere frameLoop gameplay system | 16,559,947.01 | 943,396,226.42 | 0.03 | Insere 56.97x |
-| physics/animation hot loop | Plain TS hot loop | One Insere host task | 524,879,277.77 | 740,850,496.37 | 0.67 | Insere 1.41x |
-| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 139,620.23 | 13,828,580.91 | 7.23 | Insere 99.04x |
+| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 103,206.95 | 859,675.21 | 11.63 | Insere 8.33x |
+| script event bus targeted | Map keyed Promise bus | InsereEventBus unique waits | 4,214,785.47 | 3,799,969.6 | 1.32 | Baseline 1.11x |
+| script event bus direct callbacks setup+publish | Map keyed callbacks | InsereEventBus publish | 7,246,376.81 | 6,679,134.38 | 0.75 | Baseline 1.08x |
+| script event bus direct callbacks publish-only | Map keyed callbacks hot publish | InsereEventBus hot publish | 19,142,419.6 | 18,860,807.24 | 0.27 | Baseline 1.01x |
+| gameplay tick per-entity tasks (discouraged) | Promise microtask gameplay | Insere per-entity direct gameplay | 16,056,518.95 | 1,085,670.24 | 27.63 | Baseline 14.79x |
+| gameplay tick system task | Promise microtask gameplay | Insere frameLoop gameplay system | 7,868,026.96 | 591,715,976.33 | 0.05 | Insere 75.21x |
+| physics/animation hot loop | Plain TS hot loop | One Insere host task | 506,482,982.17 | 409,366,300.97 | 1.22 | Baseline 1.24x |
+| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 123,251.04 | 9,915,323.14 | 10.09 | Insere 80.45x |
 
 Interpretation:
 
@@ -138,8 +141,9 @@ Interpretation:
   not as a per-entity hot-loop scheduler.
 - Use `InsereEventBus.subscribe()` plus `notify()` for fire-and-forget hot keyed
   script callbacks when the delivered count is not needed.
-- Use `waitBusEvent()` for keyed, cancellable script waits when suspension
-  semantics matter more than raw event throughput.
+- Use `waitUniqueBusEvent()` / `emitUniqueTo()` for keyed, cancellable script
+  waits when the host guarantees at most one suspended waiter per key.
+- Use `waitBusEvent()` for keyed waits that need full multi-waiter semantics.
 - Do not model gameplay tick as one task per entity. Use one `frameLoop` per
   system or phase and keep the entity loop inside that task.
 - Keep physics and animation inner loops in plain TypeScript under one host
@@ -154,6 +158,9 @@ The runtime keeps the public model unchanged while avoiding avoidable work:
   object allocation.
 - Single-entry `tick()` and `runIdle()` avoid allocating an entry snapshot
   array.
+- Direct and effect runtimes keep flat entry lists for hot tick/idle iteration;
+  `Map` remains the keyed lookup index, but steady tick does not allocate a
+  `Map.values()` iterator.
 - Single-entry runtimes keep a cached entry pointer and avoid a per-tick Map
   iterator.
 - Hot-path resume no longer re-checks `Map.has(key)` for the entry already
@@ -184,13 +191,46 @@ The runtime keeps the public model unchanged while avoiding avoidable work:
 - Direct restart overwrites finalizer-free superseded slots without a separate
   `Map.delete`.
 - Direct cancellation stores a single finalizer as a bare callback and only
-  promotes to a `Set` when multiple finalizers are registered.
+  promotes to an array when multiple finalizers are registered, so reverse
+  finalizer execution does not allocate a spread/reverse copy.
 - Direct `cancelGroup` bulk-clears when every active key matches the prefix.
 - Direct `cancelGroup` indexes `:` boundary prefixes such as `asset:`,
   `preview:`, and `entity:1:` for mixed-runtime group cancellation.
+- Direct `cancelGroup` fallback scans the flat entry list instead of allocating
+  a `Map` iterator when no boundary-prefix index exists.
 - `InsereEventBus.publish()` provides a listener-only hot path that skips
   waiter resolution and buffering.
 - `InsereEventBus.notify()` is the fire-and-forget listener hot path for callers
   that do not need a delivered count.
+- `InsereEventBus.publish()` and `notify()` inline the single-listener branch
+  because this path competes directly with raw `Map.get(key)?.(event)`.
+- `InsereEventBus.emit()` has a no-listener one-shot waiter fast path. It still
+  may trail a raw `Map.set`/`Map.get` Promise bus for unique keys because
+  `wait()` preserves multi-waiter-per-key semantics and must check the existing
+  slot at registration time.
+- `InsereEventBus.waitUnique()` and `emitUnique()` provide the explicit
+  unique-key waiter path. This path skips listeners and buffering, rejects
+  duplicate unique waiters, and is the right suspension API when the host owns
+  key uniqueness.
+- `InsereMailbox.wait()` stores no-match/no-signal waits as bare resolver
+  functions, so `emitOne()` does not pay structured waiter object overhead for
+  the Promise resolver queue equivalent.
+- Mailbox and event-bus `wait()` avoid allocating a default options object when
+  no `AbortSignal` is supplied.
 - API-boundary logging exits before `requestId`, `data`, or log record
   allocation when no logger is installed.
+
+## Remaining Promise Parity Boundaries
+
+- `InsereEventBus.wait(key)` is intentionally richer than a raw `Map` of
+  one-shot Promise callbacks. It supports multiple waiters per key, buffering
+  policy, cancellation, and listener coexistence.
+- `InsereEventBus.waitUnique(key)` narrows that contract to one pending waiter
+  per key. It removes the multi-waiter delivery path, but it still returns a
+  Promise, so raw callback baselines can remain faster when they do work inside
+  the callback before resolving.
+- `InsereMailbox.emitOne()` is now near parity with raw Promise resolver queues.
+  Treat small wins or losses as variance unless a gate fails repeatedly.
+- Per-entity task scheduling remains a misuse case. The Promise microtask
+  baseline is faster there because it does less policy work; use one Insere
+  `frameLoop` per system and keep entity iteration inside plain TypeScript.

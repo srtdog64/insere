@@ -16,9 +16,10 @@ const api = createInsereApi({
 ```
 
 Logging does not change scheduling, cancellation, retry, or failure behavior.
-It is observation only. If a task throws, Insere logs the bug record and then
-rethrows the original error. If a Result API returns `err(error)`, Insere logs
-the bug record and still returns the same Result shape.
+It is observation only. If a task throws, Insere logs the bug record and the
+API facade returns a failed Result under the default isolation policy. If a
+Result API returns `err(error)`, Insere logs the bug record and still returns
+the same Result shape.
 
 ## Performance Contract
 
@@ -29,7 +30,7 @@ Logging is designed to be opt-in and cold-path only:
 - no `logger`: Insere does not allocate log `data` objects
 - logger installed: records are built only for bug/failure paths
 - logger installed: `requestId` providers are read only while building a record
-- logger failure: swallowed so logging never hides the original runtime failure
+- logger failure: swallowed so logging never hides the runtime failure Result
 
 Do not use logging for per-frame tracing or normal task lifecycle telemetry.
 If a host needs high-volume traces, emit those from the host with its own
@@ -66,6 +67,7 @@ mean the host adapter or task body has a defect:
 - invalid task specs, such as an empty key
 - uncaught task failures during `tick()` or `runIdle()`
 - failures while cancelling, restarting, or cancelling a group
+- failures inside host-provided supervision callbacks
 
 `requestId` is optional and host-supplied. Pass a string for a stable adapter
 instance id, or a function when the host has a changing request/session id.
@@ -125,7 +127,7 @@ for (const record of logs.records) {
 ```
 
 The buffer drops the oldest record when it reaches the limit. A throwing logger
-is ignored so logging cannot hide the original runtime failure.
+is ignored so logging cannot hide the runtime failure Result.
 
 ## Host Policy
 

@@ -86,6 +86,14 @@ and `cancelAll` apply to both runtimes.
 `InsereApiScope` builds prefixed keys and returns filtered snapshots across
 both runtimes.
 
+The host adapter event-bus surface has two suspension modes:
+
+- `waitBusEvent(key)` / `emitTo(key, event)` for full keyed event semantics:
+  listeners, multiple waiters per key, and buffering policy.
+- `waitUniqueBusEvent(key)` / `emitUniqueTo(key, event)` for explicit
+  unique-key suspension. This path assumes one pending waiter per key, rejects
+  duplicate unique waits, and skips listeners and buffering.
+
 `api.direct`, `api.effect`, `scope.direct`, and `scope.effect` are exposed as
 escape hatches. Calling them directly bypasses the facade's shared-key policy.
 Host adapters that need one logical key space should use `InsereApi` and
@@ -109,6 +117,11 @@ api.frameLoop("gameplay:systems", step, "restart");
 api.applyEffect("autosave", effect, "skip");
 ```
 
+`frameLoop` step callbacks return `true` to continue on the next host frame and
+`false` to stop. This is intentionally stricter than a `void | boolean` shape:
+an omitted return should be a type error instead of becoming an accidental
+infinite loop.
+
 Result methods exist for host adapters:
 
 ```ts
@@ -116,10 +129,10 @@ const result = api.applyDirectResult("autosave", step, "skip", "frame");
 ```
 
 `tick(now)` and `runIdle()` also return `InsereResult<void>` from the API
-facade and host adapter. With the default `bubble` supervision they still
-rethrow uncaught task failures after logging. Use `logAndStop`,
-`dispatchAndStop`, or `convertToResult` when the host wants non-throwing
-runtime failure handling.
+facade and host adapter. The default `logAndStop` supervision isolates uncaught
+task failures, removes the failed task, logs/reports the bug, continues other
+runnable work in the same host step, and returns `err(failure)`. Use explicit
+`bubble` only for development paths that should rethrow after reporting.
 
 See [`throw-boundaries.md`](throw-boundaries.md) for the exact Result and
 intentional throw boundaries.
@@ -133,9 +146,9 @@ and zero-work disabled logging behavior.
 
 Supervision is separate from task policy. Task policy controls how work starts;
 supervision controls what happens after uncaught failure. The API facade
-supports `bubble`, `logAndStop`, `dispatchAndStop`, `convertToResult`, and
-bounded `restart`. See [`framework.md`](framework.md) for the larger host
-adapter model.
+supports explicit `bubble`, default `logAndStop`, `dispatchAndStop`,
+`convertToResult`, and bounded `restart`. See [`framework.md`](framework.md)
+for the larger host adapter model.
 
 The Result value shape is shared:
 
