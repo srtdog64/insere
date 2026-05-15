@@ -203,13 +203,17 @@ Direct tasks use callbacks instead of yielded instructions:
 - `restart` supersedes the previous callback in the same key slot.
 - `waitFrame(key, step)` registers a task that is already waiting for the next
   host tick.
+- `frameLoop(key, step)` registers a system-level frame loop. It starts on the
+  next host tick, waits for the following frame automatically, and stops when
+  the callback returns `false`.
 - `ctx.waitFrame()`, `ctx.waitIdle()`, `ctx.sleep(ms)`, and
   `ctx.sleepUntil(time)` suspend the callback until a later host action.
 - `ctx.complete()` marks the task complete. A direct task also completes when
   the callback returns without setting another wait.
 
 Use direct tasks for projection rebuild supersession, drag preview ticks,
-autosave slots, asset preview restarts, and scene-switch prefix cancellation.
+autosave slots, asset preview restarts, gameplay system loops, and scene-switch
+prefix cancellation.
 Use generator effects when sequential composition, `attempt`, `recover`, or
 resource helpers are more important than raw scheduling cost.
 
@@ -252,7 +256,8 @@ Supervision policies:
 - `bubble`: rethrow the original failure.
 - `logAndStop`: record the failure and leave the failed task stopped.
 - `dispatchAndStop`: convert failure into a host event.
-- `convertToResult`: report `err(failure)` to the host.
+- `convertToResult`: report a failed Result carrying `InsereFailure` to the
+  host.
 - `restart`: restart API-owned work up to `maxRestarts`.
 
 `restart` supervision is bounded and only works for tasks started through the

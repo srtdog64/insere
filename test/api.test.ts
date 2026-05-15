@@ -29,6 +29,45 @@ describe("InsereApi", () => {
     expect(api.size).toBe(0);
   });
 
+  it("runs direct frame loops through the API facade", () => {
+    const events: number[] = [];
+    const api = createInsereApi<unknown, number>({
+      dispatch: (event) => events.push(event)
+    });
+
+    expect(api.frameLoop("gameplay:systems", (ctx) => {
+      ctx.dispatch(ctx.frame);
+      return ctx.frame < 3;
+    })).toBe(true);
+
+    api.tick(1);
+    api.tick(2);
+    api.tick(3);
+
+    expect(events).toEqual([1, 2, 3]);
+    expect(api.size).toBe(0);
+  });
+
+  it("scopes direct frame loops through the API facade", () => {
+    const api = createInsereApi();
+    const gameplay = api.scope("gameplay");
+
+    expect(gameplay.frameLoopResult("systems", (ctx) => {
+      return ctx.frame < 1;
+    }, "skip")).toEqual(ok({
+      key: "gameplay:systems",
+      policy: "skip",
+      applied: true,
+      status: "started"
+    }));
+    expect(gameplay.frameLoopResult("systems", () => false, "skip")).toEqual(ok({
+      key: "gameplay:systems",
+      policy: "skip",
+      applied: false,
+      status: "skipped"
+    }));
+  });
+
   it("returns Result reports for scoped direct and effect policy", () => {
     const api = createInsereApi();
     const editor = api.scope("editor");

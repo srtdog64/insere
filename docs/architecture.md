@@ -84,6 +84,7 @@ composition and typed effect helpers matter more than raw scheduling cost.
 - cancellation through `AbortSignal`
 - frame, delay, idle, and Promise-bridge waits
 - direct next-frame continuation through `DirectInsereTask.waitFrame(key, step)`
+- direct system frame loops through `DirectInsereTask.frameLoop(key, step)`
 - dispatching results back to the host application
 
 ## Non-Goals

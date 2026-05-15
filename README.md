@@ -89,6 +89,11 @@ api.waitFrame("drag:preview", () => {
   // update preview on the next host tick
 });
 
+api.frameLoop("gameplay:systems", (ctx) => {
+  // run one system-level frame loop; return false to stop
+  return scene.isRunning;
+});
+
 editor.applyDirect("autosave", () => {
   // flush autosave once; skip policy avoids overlapping saves
 }, "skip", "frame");
@@ -123,7 +128,7 @@ host.api.applyEffect("input:pointerup", function* (ctx) {
   const event = yield* host.waitEvent(
     (item) => item.type === "pointerup"
   )(ctx);
-  yield* dispatch({ type: "commitPointer", event })(ctx);
+  yield* dispatch<AppEvent>({ type: "commitPointer", event })(ctx);
 });
 
 host.api.applyDirect("entity:42:events", (ctx) => {
@@ -138,7 +143,7 @@ host.api.applyDirect("entity:42:events", (ctx) => {
 });
 
 host.emit({ type: "pointerup", x: 12, y: 20 });
-host.publishTo("entity:42", { type: "damage", amount: 3 });
+host.notifyTo("entity:42", { type: "damage", amount: 3 });
 host.tick(performance.now());
 ```
 
@@ -177,7 +182,7 @@ Effect helpers cover the small composition surface:
 - task policy: `applyTask` with `spawn`, `restart`, or `skip`;
   `applyTaskResult` returns an `InsereResult` policy report
 - direct core: `DirectInsereTask` / `InsereCore` with `spawn`, `restart`,
-  `waitFrame`, `cancelGroup`, and lazy `AbortSignal`
+  `waitFrame`, `frameLoop`, `cancelGroup`, and lazy `AbortSignal`
 - direct task policy and scopes: `directTask`, `directFrameTask`,
   `applyDirectTask`, `applyDirectTaskResult`, and `DirectInsereTaskScope`
 - facade API: `createInsereApi`, `InsereApi`, and `InsereApiScope` from
@@ -186,8 +191,8 @@ Effect helpers cover the small composition surface:
   `createBufferedInsereLogger` for bug records at the API boundary; disabled
   logging is a fast no-op and does not read `requestId`
 - framework layer: `createInsereHostAdapter`, `InsereMailbox`, `waitEvent`,
-  `InsereEventBus`, `waitBusEvent`, listener-only `publish`, and explicit
-  supervision policy for large host applications
+  `InsereEventBus`, `waitBusEvent`, listener-only `publish`/`notify`, and
+  explicit supervision policy for large host applications
 
 Runtime state stays observable without taking ownership away from the host:
 `size`, `frame`, `now`, `has(key)`, `keys()`, and `snapshot()` report the
@@ -233,6 +238,7 @@ adapter, and AbortSignal I/O conventions.
 See [`docs/performance.md`](docs/performance.md) for the current benchmark
 against plain TypeScript/JavaScript baselines.
 
-Run `npm run check` for the standard build, test, export-smoke, and pack gate.
+Run `npm run check` for the standard build, test typecheck, test,
+export-smoke, and pack gate.
 Run `npm run verify:geukbit` for the Geukbit scale stress and benchmark gate,
 or `npm run check:release` before cutting a release candidate.

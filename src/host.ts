@@ -76,8 +76,11 @@ export class InsereHostAdapter<
 
   waitEvent(
     match?: InsereEventMatcher<TInboundEvent>
-  ): InsereEffect<unknown, unknown, TInboundEvent> {
-    return waitEvent(this.mailbox, match);
+  ): InsereEffect<TState, TDispatchEvent, TInboundEvent> {
+    return waitEvent<TInboundEvent, TState, TDispatchEvent>(
+      this.mailbox,
+      match
+    );
   }
 
   emitTo(key: string, event: TInboundEvent): number {
@@ -88,8 +91,15 @@ export class InsereHostAdapter<
     return this.eventBus.publish(key, event);
   }
 
-  waitBusEvent(key: string): InsereEffect<unknown, unknown, TInboundEvent> {
-    return waitBusEvent(this.eventBus, key);
+  notifyTo(key: string, event: TInboundEvent): void {
+    this.eventBus.notify(key, event);
+  }
+
+  waitBusEvent(key: string): InsereEffect<TState, TDispatchEvent, TInboundEvent> {
+    return waitBusEvent<string, TInboundEvent, TState, TDispatchEvent>(
+      this.eventBus,
+      key
+    );
   }
 
   subscribeTo(

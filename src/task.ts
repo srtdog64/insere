@@ -8,9 +8,11 @@ import {
 } from "./effect.js";
 import type {
   DirectInsereSnapshot,
+  DirectInsereFrameLoopStep,
   DirectInsereStep,
   DirectInsereTask as DirectInsereTaskRuntime
 } from "./core.js";
+import { frameLoopStep } from "./core.js";
 import type { Insere, InsereSnapshot } from "./runtime.js";
 
 export type InsereTaskPolicy = "spawn" | "restart" | "skip";
@@ -181,6 +183,14 @@ export function directFrameTask<TState, TEvent>(
   policy: InsereTaskPolicy = "restart"
 ): DirectInsereTaskSpec<TState, TEvent> {
   return directTask(key, step, policy, "frame");
+}
+
+export function directFrameLoopTask<TState, TEvent>(
+  key: string,
+  step: DirectInsereFrameLoopStep<TState, TEvent>,
+  policy: InsereTaskPolicy = "restart"
+): DirectInsereTaskSpec<TState, TEvent> {
+  return directFrameTask(key, frameLoopStep(step), policy);
 }
 
 export function spawnTask<TState, TEvent, TValue>(
@@ -541,6 +551,22 @@ export class DirectInsereTaskScope<TState = unknown, TEvent = unknown> {
     step: DirectInsereStep<TState, TEvent>
   ): void {
     this.spawn(this.frameTask(parts, step));
+  }
+
+  frameLoop(
+    parts: string | readonly string[],
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyTask(parts, frameLoopStep(step), policy, "frame");
+  }
+
+  frameLoopResult(
+    parts: string | readonly string[],
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): InsereTaskApplyResult {
+    return this.applyTaskResult(parts, frameLoopStep(step), policy, "frame");
   }
 
   apply(

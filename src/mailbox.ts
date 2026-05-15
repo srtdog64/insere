@@ -198,9 +198,9 @@ export class InsereMailbox<TEvent = unknown> {
     });
   }
 
-  waitEffect(
+  waitEffect<TState = unknown, TDispatchEvent = unknown>(
     match?: InsereEventMatcher<TEvent>
-  ): InsereEffect<unknown, unknown, TEvent> {
+  ): InsereEffect<TState, TDispatchEvent, TEvent> {
     return waitEvent(this, match);
   }
 
@@ -319,9 +319,13 @@ export function createInsereMailbox<TEvent = unknown>(
   return new InsereMailbox(options);
 }
 
-export function waitEvent<TEvent>(
+export function waitEvent<
+  TEvent,
+  TState = unknown,
+  TDispatchEvent = unknown
+>(
   mailbox: InsereMailbox<TEvent>,
   match?: InsereEventMatcher<TEvent>
-): InsereEffect<unknown, unknown, TEvent> {
+): InsereEffect<TState, TDispatchEvent, TEvent> {
   return asyncEffect((context) => mailbox.wait(match, { signal: context.signal }));
 }

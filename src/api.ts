@@ -1,6 +1,8 @@
 import {
   DirectInsereTask,
+  frameLoopStep,
   type DirectInsereOptions,
+  type DirectInsereFrameLoopStep,
   type DirectInsereSnapshot,
   type DirectInsereStep
 } from "./core.js";
@@ -19,6 +21,7 @@ import {
   failureResult,
   normalizeInsereSupervision,
   type InsereFailure,
+  type InsereFailureResult,
   type InsereFailureOperation,
   type InsereSupervisionOptions,
   type NormalizedInsereSupervision
@@ -322,6 +325,22 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     policy?: InsereTaskPolicy
   ): boolean {
     return this.applyDirect(key, step, policy, "frame");
+  }
+
+  frameLoop(
+    key: string,
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyDirect(key, frameLoopStep(step), policy, "frame");
+  }
+
+  frameLoopResult(
+    key: string,
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): InsereTaskApplyResult {
+    return this.applyDirectResult(key, frameLoopStep(step), policy, "frame");
   }
 
   restartDirect(key: string, step: DirectInsereStep<TState, TEvent>): void {
@@ -858,6 +877,22 @@ export class InsereApiScope<TState = unknown, TEvent = unknown> {
     policy?: InsereTaskPolicy
   ): boolean {
     return this.#api.waitFrame(this.#key(parts), step, policy);
+  }
+
+  frameLoop(
+    parts: string | readonly string[],
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.#api.frameLoop(this.#key(parts), step, policy);
+  }
+
+  frameLoopResult(
+    parts: string | readonly string[],
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): InsereTaskApplyResult {
+    return this.#api.frameLoopResult(this.#key(parts), step, policy);
   }
 
   applyEffect<TValue>(

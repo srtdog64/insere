@@ -100,6 +100,7 @@ Boolean methods exist for ergonomic command paths:
 
 ```ts
 api.applyDirect("drag:preview", step, "restart", "frame");
+api.frameLoop("gameplay:systems", step, "restart");
 api.applyEffect("autosave", effect, "skip");
 ```
 

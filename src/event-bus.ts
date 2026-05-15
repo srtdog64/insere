@@ -212,6 +212,32 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
     return delivered;
   }
 
+  notify(key: TKey, event: TEvent): void {
+    const listeners = this.#listeners.get(key);
+
+    if (typeof listeners === "function") {
+      listeners(event);
+      return;
+    }
+
+    if (listeners === undefined) {
+      return;
+    }
+
+    if (!isListenerSet(listeners)) {
+      listeners.run(event);
+      return;
+    }
+
+    for (const listener of listeners) {
+      if (typeof listener === "function") {
+        listener(event);
+      } else {
+        listener.run(event);
+      }
+    }
+  }
+
   subscribe(
     key: TKey,
     run: InsereEventListener<TEvent>,
@@ -308,7 +334,9 @@ export class InsereEventBus<TKey = string, TEvent = unknown> {
     });
   }
 
-  waitEffect(key: TKey): InsereEffect<unknown, unknown, TEvent> {
+  waitEffect<TState = unknown, TDispatchEvent = unknown>(
+    key: TKey
+  ): InsereEffect<TState, TDispatchEvent, TEvent> {
     return waitBusEvent(this, key);
   }
 
@@ -489,9 +517,14 @@ export function createInsereEventBus<TKey = string, TEvent = unknown>(
   return new InsereEventBus(options);
 }
 
-export function waitBusEvent<TKey, TEvent>(
+export function waitBusEvent<
+  TKey,
+  TEvent,
+  TState = unknown,
+  TDispatchEvent = unknown
+>(
   bus: InsereEventBus<TKey, TEvent>,
   key: TKey
-): InsereEffect<unknown, unknown, TEvent> {
+): InsereEffect<TState, TDispatchEvent, TEvent> {
   return asyncEffect((context) => bus.wait(key, { signal: context.signal }));
 }

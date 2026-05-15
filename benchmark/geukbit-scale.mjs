@@ -37,6 +37,23 @@ function measure(name, units, run) {
   return toMeasurement(name, units, samples);
 }
 
+function measurePrepared(name, units, prepare, run) {
+  const samples = [];
+
+  for (let index = 0; index < repeats; index += 1) {
+    const prepared = prepare();
+    const start = performance.now();
+    run(prepared);
+    const elapsed = performance.now() - start;
+
+    if (index > 0) {
+      samples.push(elapsed);
+    }
+  }
+
+  return toMeasurement(name, units, samples);
+}
+
 async function measureAsync(name, units, run) {
   const samples = [];
 
@@ -182,6 +199,42 @@ function insereScriptEventSubscriptions() {
   }
 }
 
+function prepareMapScriptEventCallbacks() {
+  const listeners = new Map();
+
+  for (let index = 0; index < scriptEvents; index += 1) {
+    listeners.set(`entity:${index}`, (event) => {
+      sink += event.entity;
+    });
+  }
+
+  return listeners;
+}
+
+function publishMapScriptEvents(listeners) {
+  for (let index = 0; index < scriptEvents; index += 1) {
+    listeners.get(`entity:${index}`)?.({ entity: index });
+  }
+}
+
+function prepareInsereScriptEventSubscriptions() {
+  const eventBus = createInsereEventBus();
+
+  for (let index = 0; index < scriptEvents; index += 1) {
+    eventBus.subscribe(`entity:${index}`, (event) => {
+      sink += event.entity;
+    });
+  }
+
+  return eventBus;
+}
+
+function publishInsereScriptEvents(eventBus) {
+  for (let index = 0; index < scriptEvents; index += 1) {
+    eventBus.notify(`entity:${index}`, { entity: index });
+  }
+}
+
 async function promiseGameplayTick() {
   const frames = 3;
   let promises = [];
@@ -206,7 +259,7 @@ async function promiseGameplayTick() {
   }
 }
 
-function insereGameplayTick() {
+function insereGameplayTickPerEntity() {
   const frames = 3;
   const host = createInsereHostAdapter();
 
@@ -219,6 +272,23 @@ function insereGameplayTick() {
       }
     });
   }
+
+  for (let frame = 1; frame <= frames; frame += 1) {
+    host.tick(frame);
+  }
+}
+
+function insereGameplaySystemTick() {
+  const frames = 3;
+  const host = createInsereHostAdapter();
+
+  host.api.frameLoop("gameplay:systems", (ctx) => {
+    for (let entity = 0; entity < gameplayEntities; entity += 1) {
+      sink += 1;
+    }
+
+    return ctx.frame < frames;
+  });
 
   for (let frame = 1; frame <= frames; frame += 1) {
     host.tick(frame);
@@ -245,14 +315,12 @@ function inserePhysicsHostTask() {
   const host = createInsereHostAdapter();
   velocity.fill(2);
 
-  host.api.waitFrame("physics:step", (ctx) => {
+  host.api.frameLoop("physics:step", (ctx) => {
     for (let entity = 0; entity < physicsEntities; entity += 1) {
       position[entity] += velocity[entity] * 0.5;
     }
 
-    if (ctx.frame < 5) {
-      ctx.waitFrame();
-    }
+    return ctx.frame < 5;
   });
 
   for (let frame = 1; frame <= 5; frame += 1) {
@@ -328,14 +396,34 @@ const rows = [
     insere: await measureAsync("InsereEventBus", scriptEvents, insereScriptEventBus)
   },
   {
-    scenario: "script event bus direct callbacks",
+    scenario: "script event bus direct callbacks setup+publish",
     baseline: measure("Map keyed callbacks", scriptEvents, mapScriptEventCallbacks),
     insere: measure("InsereEventBus publish", scriptEvents, insereScriptEventSubscriptions)
   },
   {
-    scenario: "gameplay tick",
+    scenario: "script event bus direct callbacks publish-only",
+    baseline: measurePrepared(
+      "Map keyed callbacks hot publish",
+      scriptEvents,
+      prepareMapScriptEventCallbacks,
+      publishMapScriptEvents
+    ),
+    insere: measurePrepared(
+      "InsereEventBus hot publish",
+      scriptEvents,
+      prepareInsereScriptEventSubscriptions,
+      publishInsereScriptEvents
+    )
+  },
+  {
+    scenario: "gameplay tick per-entity tasks (discouraged)",
     baseline: await measureAsync("Promise microtask gameplay", gameplayEntities * 3, promiseGameplayTick),
-    insere: measure("Insere direct gameplay", gameplayEntities * 3, insereGameplayTick)
+    insere: measure("Insere per-entity direct gameplay", gameplayEntities * 3, insereGameplayTickPerEntity)
+  },
+  {
+    scenario: "gameplay tick system task",
+    baseline: await measureAsync("Promise microtask gameplay", gameplayEntities * 3, promiseGameplayTick),
+    insere: measure("Insere frameLoop gameplay system", gameplayEntities * 3, insereGameplaySystemTick)
   },
   {
     scenario: "physics/animation hot loop",

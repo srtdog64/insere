@@ -111,7 +111,8 @@ describe("Insere framework layers", () => {
     expect(mailbox.emit(7)).toBe(0);
     await expect(mailbox.wait()).resolves.toBe(7);
     await expect(settled).resolves.toSatisfy(
-      (results) => results.every((result) => result.status === "rejected")
+      (results: PromiseSettledResult<number>[]) =>
+        results.every((result) => result.status === "rejected")
     );
   });
 
@@ -128,6 +129,23 @@ describe("Insere framework layers", () => {
 
     await expect(mailbox.wait()).resolves.toBe(2);
     await expect(mailbox.wait()).resolves.toBe(3);
+  });
+
+  it("notifies hot event bus subscribers without delivered-count bookkeeping", () => {
+    const host = createInsereHostAdapter<
+      unknown,
+      never,
+      { readonly amount: number }
+    >();
+    let total = 0;
+
+    host.subscribeTo("entity:1", (event) => {
+      total += event.amount;
+    });
+    host.notifyTo("entity:1", { amount: 3 });
+    host.notifyTo("entity:2", { amount: 7 });
+
+    expect(total).toBe(3);
   });
 
   it("swallows task failures with logAndStop supervision", () => {

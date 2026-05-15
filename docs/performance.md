@@ -46,14 +46,14 @@ This run used `INSERE_BENCH_REPEATS=11`.
 
 | Scenario | Baseline | Insere | Baseline ops/s | Insere ops/s | Best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 138,496.64 | 23,702,299.12 | 4.22 | Insere 171.14x |
-| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 25,037,556.33 | 84,530,853.76 | 0.12 | Insere 3.38x |
-| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 136,411.88 | 56,274,620.15 | 0.18 | Insere 412.53x |
-| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 273,306.93 | 19,459,038.72 | 0.51 | Insere 71.2x |
-| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 25,037,556.33 | 33,908,650.1 | 2.95 | Insere 1.35x |
-| Result branch | Direct TS value branch | `InsereResult ok/match` | 182,939,099.57 | 131,187,112.18 | 7.62 | Baseline 1.39x |
-| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 15,424,957.58 | 13,360,053.44 | 0.75 | Baseline 1.15x |
-| Mailbox consume-one | Promise resolver queue | `InsereMailbox.emitOne` | 12,232,415.9 | 11,449,507.67 | 0.87 | Baseline 1.07x |
+| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 135,598.46 | 13,115,442.12 | 7.62 | Insere 96.72x |
+| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 25,866,528.71 | 43,572,984.75 | 0.23 | Insere 1.68x |
+| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 105,678.53 | 48,947,626.04 | 0.2 | Insere 463.17x |
+| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 247,239.57 | 12,547,051.44 | 0.8 | Insere 50.75x |
+| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 25,866,528.71 | 21,151,934.34 | 4.73 | Baseline 1.22x |
+| Result branch | Direct TS value branch | `InsereResult ok/match` | 160,859,633.88 | 123,644,546.66 | 8.09 | Baseline 1.3x |
+| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 13,058,239.75 | 10,132,738.88 | 0.99 | Baseline 1.29x |
+| Mailbox consume-one | Promise resolver queue | `InsereMailbox.emitOne` | 9,109,127.35 | 7,976,389.89 | 1.25 | Baseline 1.14x |
 
 ## Interpretation
 
@@ -61,15 +61,15 @@ Insere should be compared against the control-flow machinery it replaces, not
 against a bare synchronous branch:
 
 - Restart storm compares against Promise plus `Map`, `AbortController`,
-  cleanup, and latest-only guard. Direct Insere was about 171x faster.
+  cleanup, and latest-only guard. Direct Insere was about 97x faster.
 - Frame continuation measures tasks already waiting for the next host tick.
-  Direct Insere was about 3.4x faster than flushing equivalent
+  Direct Insere was about 1.7x faster than flushing equivalent
   `Promise.resolve` continuations.
 - Cancel group measures cancelling 10k keyed tasks by prefix. Direct Insere was
-  about 413x faster and completed in 0.18ms in this run.
+  about 463x faster and completed in 0.2ms in this run.
 - Mixed cancel group measures cancelling the `asset:` half of a runtime that
-  also contains `preview:` tasks. Direct Insere was about 71x faster and
-  completed in 0.51ms.
+  also contains `preview:` tasks. Direct Insere was about 51x faster and
+  completed in 0.8ms.
 - `InsereResult ok/match` remains slower than direct value branching. That path
   is not treated as a hot scheduling path.
 - `InsereMailbox` fanout is now near parity with a simple `EventTarget`
@@ -84,6 +84,10 @@ It means Insere should stay out of inner numeric loops and per-component hot
 paths. Put those in plain TypeScript, then use Insere at the orchestration
 boundary where keyed cancellation, task policy, and frame-clock ownership
 matter.
+
+Rule of thumb: attaching Insere directly to per-entity hot loops is slow;
+attaching it to per-system, per-phase, or per-resource lifecycle boundaries is
+fast.
 
 ## Performance Budget
 
@@ -110,21 +114,26 @@ Latest local result, measured on 2026-05-15 with Node `v22.17.0`:
 
 | Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 112,877.52 | 874,102.95 | 11.44 | Insere 7.74x |
-| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,457,122.48 | 3,864,584.94 | 1.29 | Baseline 1.15x |
-| script event bus direct callbacks | Map keyed callbacks | InsereEventBus publish | 7,552,870.09 | 7,344,300.82 | 0.68 | Baseline 1.03x |
-| gameplay tick | Promise microtask gameplay | Insere direct gameplay | 16,766,333.2 | 3,486,993.51 | 8.6 | Baseline 4.81x |
-| physics/animation hot loop | Plain TS hot loop | One Insere host task | 910,580,950.65 | 872,752,661.9 | 0.57 | Baseline 1.04x |
-| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 142,978.35 | 13,924,279.77 | 7.18 | Insere 97.39x |
+| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 114,682.19 | 849,805.39 | 11.77 | Insere 7.41x |
+| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,132,572.94 | 3,399,279.35 | 1.47 | Baseline 1.22x |
+| script event bus direct callbacks setup+publish | Map keyed callbacks | InsereEventBus publish | 7,701,786.81 | 7,262,164.12 | 0.69 | Baseline 1.06x |
+| script event bus direct callbacks publish-only | Map keyed callbacks hot publish | InsereEventBus hot publish | 19,801,980.2 | 19,615,535.5 | 0.25 | Baseline 1.01x |
+| gameplay tick per-entity tasks (discouraged) | Promise microtask gameplay | Insere per-entity direct gameplay | 15,811,943.29 | 3,410,951.43 | 8.8 | Baseline 4.64x |
+| gameplay tick system task | Promise microtask gameplay | Insere frameLoop gameplay system | 16,333,641.86 | 955,414,012.74 | 0.03 | Insere 58.49x |
+| physics/animation hot loop | Plain TS hot loop | One Insere host task | 894,934,669.77 | 856,457,690.99 | 0.58 | Baseline 1.04x |
+| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 124,327.76 | 12,772,207.68 | 7.83 | Insere 102.73x |
 
 Interpretation:
 
 - Use Insere for lifecycle cancellation and projection restart.
-- Use `InsereEventBus.subscribe()` plus `publish()` for hot keyed script
-  callbacks.
+- Use Insere at per-system, per-phase, and per-resource lifecycle boundaries,
+  not as a per-entity hot-loop scheduler.
+- Use `InsereEventBus.subscribe()` plus `notify()` for fire-and-forget hot keyed
+  script callbacks when the delivered count is not needed.
 - Use `waitBusEvent()` for keyed, cancellable script waits when suspension
   semantics matter more than raw event throughput.
-- Do not model gameplay tick as one task per entity.
+- Do not model gameplay tick as one task per entity. Use one `frameLoop` per
+  system or phase and keep the entity loop inside that task.
 - Keep physics and animation inner loops in plain TypeScript under one host
   task.
 
@@ -160,6 +169,8 @@ The runtime keeps the public model unchanged while avoiding avoidable work:
   object.
 - Direct `waitFrame(key, step)` registers already-waiting frame continuations
   without an initial branch run.
+- Direct `frameLoop(key, step)` and API `frameLoop()` encode per-system frame
+  loops without scheduling one task per entity.
 - Direct frame tick uses a frame queue and a bulk-clear fast path when all
   waiting tasks complete in the same tick.
 - Direct restart overwrites finalizer-free superseded slots without a separate
@@ -171,5 +182,7 @@ The runtime keeps the public model unchanged while avoiding avoidable work:
   `preview:`, and `entity:1:` for mixed-runtime group cancellation.
 - `InsereEventBus.publish()` provides a listener-only hot path that skips
   waiter resolution and buffering.
+- `InsereEventBus.notify()` is the fire-and-forget listener hot path for callers
+  that do not need a delivered count.
 - API-boundary logging exits before `requestId`, `data`, or log record
   allocation when no logger is installed.

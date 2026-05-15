@@ -37,9 +37,9 @@ Throws remain intentional in these cases:
 - explicit overflow policies configured as `"throw"`
 - invalid initialization options such as non-positive buffer/logger limits
 - host-owned event listeners registered through `InsereEventBus.subscribe`.
-  `emit`, `emitTo`, `publish`, and `publishTo` call listeners synchronously and
-  let listener failures bubble to the host. Use task supervision when listener
-  work should be reported through Insere.
+  `emit`, `emitTo`, `publish`, `publishTo`, `notify`, and `notifyTo` call
+  listeners synchronously and let listener failures bubble to the host. Use
+  task supervision when listener work should be reported through Insere.
 
 Logger failures are not intentional throw boundaries. `logInsereBug` swallows
 logger exceptions so logging cannot hide the original task/runtime failure.

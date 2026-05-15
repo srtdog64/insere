@@ -101,21 +101,19 @@ describe("Geukbit scale surfaces", () => {
     expect(host.eventBus.listeners).toBe(0);
   });
 
-  it("runs gameplay frame continuations for many active entities", () => {
+  it("runs gameplay frame continuations from one system task", () => {
     const entityCount = 5_000;
     const frames = 3;
     let steps = 0;
     const host = createInsereHostAdapter();
 
-    for (let entity = 0; entity < entityCount; entity += 1) {
-      host.api.waitFrame(`gameplay:entity:${entity}`, (ctx) => {
+    host.api.frameLoop("gameplay:systems", (ctx) => {
+      for (let entity = 0; entity < entityCount; entity += 1) {
         steps += 1;
+      }
 
-        if (ctx.frame < frames) {
-          ctx.waitFrame();
-        }
-      });
-    }
+      return ctx.frame < frames;
+    });
 
     for (let frame = 1; frame <= frames; frame += 1) {
       host.tick(frame);
@@ -134,14 +132,13 @@ describe("Geukbit scale surfaces", () => {
 
     velocity.fill(2);
 
-    host.api.waitFrame("physics:step", (ctx) => {
+    host.api.frameLoop("physics:step", (ctx) => {
       for (let entity = 0; entity < entityCount; entity += 1) {
-        position[entity] += velocity[entity] * 0.5;
+        position[entity] =
+          (position[entity] ?? 0) + (velocity[entity] ?? 0) * 0.5;
       }
 
-      if (ctx.frame < frames) {
-        ctx.waitFrame();
-      }
+      return ctx.frame < frames;
     });
 
     for (let frame = 1; frame <= frames; frame += 1) {

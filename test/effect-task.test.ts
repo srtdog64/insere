@@ -5,6 +5,7 @@ import {
   InsereTaskScope,
   access,
   acquireUseRelease,
+  appError,
   applyTask,
   applyTaskResult,
   asyncEffect,
@@ -243,7 +244,7 @@ describe("Insere effect layer", () => {
 
   it("creates, narrows, and matches result values", () => {
     const success = ok(3);
-    const failure = err("missing");
+    const failure = err(appError("VALIDATION_FAILED", "missing", "Effect"));
 
     expect(isOk(success)).toBe(true);
     expect(isErr(success)).toBe(false);
@@ -255,13 +256,13 @@ describe("Insere effect layer", () => {
     })).toBe(4);
     expect(matchResult(failure, {
       ok: () => "ok",
-      err: (error) => error
+      err: (error) => error.message
     })).toBe("missing");
   });
 
   it("supports positional matchResult callbacks without allocating cases", () => {
     const success = ok(3);
-    const failure = err("missing");
+    const failure = err(appError("VALIDATION_FAILED", "missing", "Effect"));
 
     expect(
       matchResult(
@@ -274,7 +275,7 @@ describe("Insere effect layer", () => {
       matchResult(
         failure,
         () => "ok",
-        (error) => `${error}!`
+        (error) => `${error.message}!`
       )
     ).toBe("missing!");
   });

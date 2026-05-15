@@ -55,8 +55,9 @@ These items are now designed and implemented in the core API:
 - Frame/time helpers: `waitFrames`, `sleepUntil`, `currentFrame`,
   `currentTime`, and `currentKey`.
 - Packaging: `docs` and `benchmark` are included in package files.
-- Release gates: `npm run check` validates build, tests, export smoke, and
-  package dry-run; `npm run check:release` also runs the Geukbit scale gate.
+- Release gates: `npm run check` validates build, test typechecking, tests,
+  export smoke, and package dry-run; `npm run check:release` also runs the
+  Geukbit scale gate.
 - Direct core: `DirectInsereTask` / `InsereCore` with `spawn`, `restart`,
   `waitFrame`, `cancel`, `cancelGroup`, `cancelAll`, `tick`, `runIdle`, lazy
   `AbortSignal`, cancellation finalizers, `delta`, and snapshots.
@@ -101,17 +102,19 @@ Current local result, measured on 2026-05-15 with Node `v22.17.0` and
   for typed matching, buffering policy, and cancellation cleanup.
 - `InsereMailbox.emitOne` is about 1.07x slower than a raw Promise resolver
   queue and provides explicit consume-one semantics for queue-like handoff.
-- Geukbit scale benchmark shows lifecycle cancel and projection restart are
-  strong fits, hot script event publish is close to raw Map callbacks,
-  Promise-style keyed waits are slower, and per-entity gameplay task scheduling
-  is not a good fit.
+- Geukbit scale benchmark shows lifecycle cancel, projection restart, and
+  `frameLoop` system ticks are strong fits. Fire-and-forget event `notify` is
+  close to raw Map callbacks, Promise-style keyed waits are slower, and
+  per-entity gameplay task scheduling is not a good fit.
 
 Design conclusion:
 
 - Insere must not be used for hot numeric/data loops.
+- Insere is slow when attached directly to per-entity hot loops, and fast when
+  attached to per-system, per-phase, or per-resource lifecycle boundaries.
 - Use `DirectInsereTask` for Geukbit hot orchestration paths: projection
   rebuild supersession, asset preview restart, drag frame continuation,
-  autosave slots, and scene-switch cancellation.
+  gameplay system `frameLoop`, autosave slots, and scene-switch cancellation.
 - Use generator/effect Insere for expressive composition where the extra
   abstraction is worth it.
 - Insere is for orchestration boundaries where keyed cancellation,
@@ -133,6 +136,7 @@ interface TaskRuntimePort {
   tick(now: number): InsereResult<void>;
   runIdle(): InsereResult<void>;
   waitFrame(key: string, step: DirectInsereStep): void;
+  frameLoop(key: string, step: DirectInsereFrameLoopStep): boolean;
   applyDirect(
     key: string,
     step: DirectInsereStep,

@@ -120,7 +120,7 @@ host.api.applyDirect("entity:42:script:events", (ctx) => {
   ctx.waitFrame();
 });
 
-host.publishTo("entity:42", { type: "damage", amount: 10 });
+host.notifyTo("entity:42", { type: "damage", amount: 10 });
 ```
 
 Use mailbox predicates for broad host events. Use event bus keys for targeted
@@ -129,12 +129,33 @@ until the next matching event.
 
 `emitTo()` is the full event-bus path: it delivers listeners, resumes keyed
 waiters, and applies buffering when nobody receives the event. `publishTo()` is
-the listener-only hot path: it delivers subscriptions and never touches
-waiters or buffers.
+the listener-only path when callers need a delivered count. `notifyTo()` is the
+fire-and-forget hot path: it delivers subscriptions and never touches waiters,
+buffers, or delivered-count bookkeeping.
 
 Event-bus listeners are host callbacks. Listener exceptions are not swallowed:
-`emitTo()` and `publishTo()` let them bubble to the host. Put fallible work
-inside an Insere task when it should use supervision.
+`emitTo()`, `publishTo()`, and `notifyTo()` let them bubble to the host. Put
+fallible work inside an Insere task when it should use supervision.
+
+## Frame Loops
+
+Use `frameLoop()` for Geukbit-style gameplay, animation, or projection phases
+where one system owns many entities. The loop starts on the next host tick and
+continues until the callback returns `false`.
+
+```ts
+host.api.frameLoop("gameplay:systems", (ctx) => {
+  for (const entity of activeEntities) {
+    runGameplay(entity, ctx.delta);
+  }
+
+  return scene.isRunning;
+});
+```
+
+Avoid creating one direct task per entity for gameplay or physics ticks. Keep
+numeric and component loops in plain TypeScript inside one system task, then use
+Insere for the lifecycle boundary: start, restart, cancel, and supervision.
 
 ## Supervision
 
@@ -151,7 +172,8 @@ Supervision decides what happens after uncaught failure:
 - `bubble`: rethrow the original failure
 - `logAndStop`: log/report and keep the failed task stopped
 - `dispatchAndStop`: convert failure to a host event
-- `convertToResult`: send `err(failure)` to `onResult`
+- `convertToResult`: send a failed Result carrying `InsereFailure` to
+  `onResult`
 - `restart`: restart a remembered task up to `maxRestarts`
 
 Bounded restart only applies to tasks started through the API facade, because

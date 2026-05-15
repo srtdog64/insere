@@ -71,7 +71,7 @@
     "benchmark:geukbit": "npm run build && node benchmark/geukbit-scale.mjs",
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
-    "check:publish": "npm run build && npm test && npm run smoke:exports && npm run pack:check",
+    "check:publish": "npm run check",
     "check:release": "npm run check && npm run verify:geukbit",
     "pack:check": "npm pack --dry-run",
     "prepack": "npm run build",
@@ -81,7 +81,8 @@
     "stress:geukbit": "vitest run test/geukbit-scale.test.ts",
     "verify:geukbit": "npm run stress:geukbit && npm run benchmark:geukbit",
     "test": "vitest run",
-    "check": "npm run build && npm test && npm run smoke:exports && npm run pack:check"
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "check": "npm run build && npm run typecheck:test && npm test && npm run smoke:exports && npm run pack:check"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

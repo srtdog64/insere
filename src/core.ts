@@ -25,6 +25,10 @@ export type DirectInsereStep<TState = unknown, TEvent = unknown> = (
   context: DirectInsereContext<TState, TEvent>
 ) => void;
 
+export type DirectInsereFrameLoopStep<TState = unknown, TEvent = unknown> = (
+  context: DirectInsereContext<TState, TEvent>
+) => void | boolean;
+
 export interface DirectInsereOptions<TState = unknown, TEvent = unknown> {
   readonly dispatch?: DirectInsereDispatch<TEvent>;
   readonly getState?: DirectInsereStateReader<TState>;
@@ -172,6 +176,21 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
     entry.waitFrame = this.#frame;
     this.#setEntry(entry);
     this.#queueFrame(entry);
+  }
+
+  frameLoop(
+    key: string,
+    step: DirectInsereFrameLoopStep<TState, TEvent>
+  ): void {
+    this.waitFrame(key, frameLoopStep(step));
+  }
+
+  restartFrameLoop(
+    key: string,
+    step: DirectInsereFrameLoopStep<TState, TEvent>
+  ): void {
+    this.cancel(key);
+    this.frameLoop(key, step);
   }
 
   cancel(key: string): boolean {
@@ -701,6 +720,16 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       // Failure reporters must not prevent task cleanup or rethrow semantics.
     }
   }
+}
+
+export function frameLoopStep<TState, TEvent>(
+  step: DirectInsereFrameLoopStep<TState, TEvent>
+): DirectInsereStep<TState, TEvent> {
+  return (context) => {
+    if (step(context) !== false) {
+      context.waitFrame();
+    }
+  };
 }
 
 export { DirectInsereTask as InsereCore };

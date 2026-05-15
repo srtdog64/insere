@@ -1,4 +1,4 @@
-import { err, type AppError, type ErrorCode, type InsereResult, type Stage } from "./effect.js";
+import { type AppError, type ErrorCode, type Stage } from "./effect.js";
 
 export type InsereRuntimeKind = "api" | "direct" | "effect";
 
@@ -35,6 +35,8 @@ export interface InsereFailure extends AppError {
   readonly data?: Readonly<Record<string, unknown>> | undefined;
 }
 
+export type InsereFailureResult = { readonly ok: false; readonly error: InsereFailure };
+
 export type ReportableInsereFailure = Omit<
   InsereFailure,
   keyof AppError
@@ -45,7 +47,7 @@ export interface InsereSupervisionOptions<TEvent = unknown> {
   readonly maxRestarts?: number;
   readonly toEvent?: (failure: InsereFailure) => TEvent;
   readonly onFailure?: (failure: InsereFailure) => void;
-  readonly onResult?: (result: InsereResult<never>) => void;
+  readonly onResult?: (result: InsereFailureResult) => void;
 }
 
 export interface NormalizedInsereSupervision<TEvent = unknown> {
@@ -53,7 +55,7 @@ export interface NormalizedInsereSupervision<TEvent = unknown> {
   readonly maxRestarts: number;
   readonly toEvent?: (failure: InsereFailure) => TEvent;
   readonly onFailure?: (failure: InsereFailure) => void;
-  readonly onResult?: (result: InsereResult<never>) => void;
+  readonly onResult?: (result: InsereFailureResult) => void;
 }
 
 export function normalizeInsereSupervision<TEvent>(
@@ -76,6 +78,6 @@ export function normalizeInsereSupervision<TEvent>(
 
 export function failureResult(
   failure: InsereFailure
-): InsereResult<never> {
-  return err(failure);
+): InsereFailureResult {
+  return { ok: false, error: failure };
 }

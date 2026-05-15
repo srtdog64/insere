@@ -5,6 +5,7 @@ import {
   DirectInsereTaskScope,
   applyDirectTask,
   applyDirectTaskResult,
+  directFrameLoopTask,
   directFrameTask,
   directTask,
   matchResult,
@@ -116,6 +117,25 @@ describe("DirectInsereTask", () => {
     runtime.tick(1);
 
     expect(events).toEqual([0, 1, 2]);
+    expect(runtime.size).toBe(0);
+  });
+
+  it("runs frame loops as one system task until the step returns false", () => {
+    const events: number[] = [];
+    const runtime = new DirectInsereTask<unknown, number>({
+      dispatch: (event) => events.push(event)
+    });
+
+    runtime.frameLoop("gameplay:systems", (ctx) => {
+      ctx.dispatch(ctx.frame);
+      return ctx.frame < 3;
+    });
+
+    runtime.tick(1);
+    runtime.tick(2);
+    runtime.tick(3);
+
+    expect(events).toEqual([1, 2, 3]);
     expect(runtime.size).toBe(0);
   });
 
@@ -250,6 +270,24 @@ describe("DirectInsereTask", () => {
     runtime.tick(1);
 
     expect(events).toEqual(["new"]);
+  });
+
+  it("applies direct frame loop task specs", () => {
+    const events: number[] = [];
+    const runtime = new DirectInsereTask<unknown, number>({
+      dispatch: (event) => events.push(event)
+    });
+
+    expect(applyDirectTask(runtime, directFrameLoopTask("systems", (ctx) => {
+      ctx.dispatch(ctx.frame);
+      return ctx.frame < 2;
+    }))).toBe(true);
+
+    runtime.tick(1);
+    runtime.tick(2);
+
+    expect(events).toEqual([1, 2]);
+    expect(runtime.size).toBe(0);
   });
 
   it("applies direct skip policy without replacing active work", () => {

@@ -6,6 +6,7 @@ import {
   createInsereEventBus,
   createInsereMailbox,
   currentDelta,
+  frameLoopStep,
   dispatch,
   waitEvent
 } from "../dist/index.js";
@@ -30,6 +31,10 @@ const api = createInsereApi({
 });
 
 api.waitFrame("direct:preview", (ctx) => ctx.dispatch(`direct:${ctx.delta}`));
+api.frameLoop("direct:loop", (ctx) => {
+  ctx.dispatch(`loop:${ctx.frame}`);
+  return false;
+});
 api.applyEffect("effect:delta", function* (ctx) {
   const delta = yield* currentDelta()(ctx);
   yield* dispatch(`effect:${delta}`)(ctx);
@@ -37,8 +42,16 @@ api.applyEffect("effect:delta", function* (ctx) {
 api.tick(16);
 api.tick(32);
 
-if (!events.includes("direct:0") || !events.includes("effect:0")) {
+if (
+  !events.includes("direct:0") ||
+  !events.includes("loop:1") ||
+  !events.includes("effect:0")
+) {
   throw new Error(`Unexpected api events: ${JSON.stringify(events)}`);
+}
+
+if (typeof frameLoopStep(() => false) !== "function") {
+  throw new Error("frameLoopStep export is not usable.");
 }
 
 api.waitFrame("broken", () => {
