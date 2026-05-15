@@ -18,6 +18,7 @@ const mailboxEvents = Number(process.env.INSERE_BENCH_MAILBOX_EVENTS ?? 10_000);
 const scriptEvents = Number(process.env.INSERE_BENCH_SCRIPT_EVENTS ?? 5_000);
 const resultIterations = Number(process.env.INSERE_BENCH_RESULTS ?? 1_000_000);
 const repeats = Number(process.env.INSERE_BENCH_REPEATS ?? 11);
+const gate = process.argv.includes("--gate");
 
 let sink = 0;
 
@@ -628,6 +629,13 @@ printTable("Framework checks", frameworkRows);
 console.log("");
 console.log(`sink=${sink}`);
 
+if (gate) {
+  assertInsereFaster("Restart storm", p0Rows, 2);
+  assertInsereFaster("Frame continuation", p0Rows, 1.2);
+  assertInsereFaster("Cancel group", p0Rows, 2);
+  assertInsereFaster("Cancel group mixed", p0Rows, 2);
+}
+
 function printTable(title, rows) {
   console.log(`## ${title}`);
   console.log("");
@@ -641,6 +649,22 @@ function printTable(title, rows) {
         `${formatNumber(row.insere.opsPerSecond)} | ` +
         `${formatNumber(row.insere.bestMs)} | ` +
         `${fasterSide(row.insere, row.baseline)} |`
+    );
+  }
+}
+
+function assertInsereFaster(scenario, rows, minRatio) {
+  const row = rows.find((item) => item.scenario === scenario);
+
+  if (!row) {
+    throw new Error(`Missing benchmark scenario: ${scenario}`);
+  }
+
+  const ratio = row.insere.opsPerSecond / row.baseline.opsPerSecond;
+
+  if (ratio < minRatio) {
+    throw new Error(
+      `${scenario} gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
     );
   }
 }

@@ -14,6 +14,9 @@ restartable, and tied to a host clock.
 
 ```sh
 npm run benchmark
+npm run benchmark:gate
+npm run benchmark:geukbit
+npm run benchmark:geukbit:gate
 ```
 
 The benchmark builds `dist` first, then compares the published JavaScript API
@@ -28,6 +31,10 @@ npm run check:release
 That runs the standard package gate plus the Geukbit scale stress and benchmark
 gate. Use `npm run check` for normal local validation when the full benchmark
 gate is not needed.
+
+The non-gate benchmark scripts print tables only. The `*:gate` scripts fail the
+process when conservative release ratios are missed. See
+[`stability.md`](stability.md) for the current gate thresholds.
 
 Default workloads:
 
@@ -46,14 +53,14 @@ This run used `INSERE_BENCH_REPEATS=11`.
 
 | Scenario | Baseline | Insere | Baseline ops/s | Insere ops/s | Best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 135,598.46 | 13,115,442.12 | 7.62 | Insere 96.72x |
-| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 25,866,528.71 | 43,572,984.75 | 0.23 | Insere 1.68x |
-| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 105,678.53 | 48,947,626.04 | 0.2 | Insere 463.17x |
-| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 247,239.57 | 12,547,051.44 | 0.8 | Insere 50.75x |
-| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 25,866,528.71 | 21,151,934.34 | 4.73 | Baseline 1.22x |
-| Result branch | Direct TS value branch | `InsereResult ok/match` | 160,859,633.88 | 123,644,546.66 | 8.09 | Baseline 1.3x |
-| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 13,058,239.75 | 10,132,738.88 | 0.99 | Baseline 1.29x |
-| Mailbox consume-one | Promise resolver queue | `InsereMailbox.emitOne` | 9,109,127.35 | 7,976,389.89 | 1.25 | Baseline 1.14x |
+| Restart storm | Promise+Map+Abort latest-only | `DirectInsereTask.restart` | 144,697.66 | 16,153,523.08 | 6.19 | Insere 111.64x |
+| Frame continuation | `async`/`await Promise.resolve` step | `DirectInsereTask.waitFrame` + `tick` | 25,641,025.64 | 84,459,459.46 | 0.12 | Insere 3.29x |
+| Cancel group | Map+AbortController cancelGroup | `DirectInsereTask.cancelGroup` | 149,695.89 | 62,617,407.64 | 0.16 | Insere 418.3x |
+| Cancel group mixed | Map+AbortController mixed cancelGroup | `DirectInsereTask` indexed mixed cancelGroup | 270,690.21 | 16,869,095.82 | 0.59 | Insere 62.32x |
+| Generator frame routine | `async`/`await Promise.resolve` step | Generator `Insere` frame routine | 25,641,025.64 | 26,185,550.81 | 3.82 | Insere 1.02x |
+| Result branch | Direct TS value branch | `InsereResult ok/match` | 179,006,157.81 | 128,279,135.4 | 7.8 | Baseline 1.4x |
+| Mailbox fanout | EventTarget once Promise waiters | `InsereMailbox` waitEvent fanout | 14,277,555.68 | 11,184,431.27 | 0.89 | Baseline 1.28x |
+| Mailbox consume-one | Promise resolver queue | `InsereMailbox.emitOne` | 10,592,098.29 | 7,589,556.77 | 1.32 | Baseline 1.4x |
 
 ## Interpretation
 
@@ -61,15 +68,15 @@ Insere should be compared against the control-flow machinery it replaces, not
 against a bare synchronous branch:
 
 - Restart storm compares against Promise plus `Map`, `AbortController`,
-  cleanup, and latest-only guard. Direct Insere was about 97x faster.
+  cleanup, and latest-only guard. Direct Insere was about 112x faster.
 - Frame continuation measures tasks already waiting for the next host tick.
-  Direct Insere was about 1.7x faster than flushing equivalent
+  Direct Insere was about 3.3x faster than flushing equivalent
   `Promise.resolve` continuations.
 - Cancel group measures cancelling 10k keyed tasks by prefix. Direct Insere was
-  about 463x faster and completed in 0.2ms in this run.
+  about 418x faster and completed in 0.16ms in this run.
 - Mixed cancel group measures cancelling the `asset:` half of a runtime that
-  also contains `preview:` tasks. Direct Insere was about 51x faster and
-  completed in 0.8ms.
+  also contains `preview:` tasks. Direct Insere was about 62x faster and
+  completed in 0.59ms.
 - `InsereResult ok/match` remains slower than direct value branching. That path
   is not treated as a hot scheduling path.
 - `InsereMailbox` fanout is now near parity with a simple `EventTarget`
@@ -114,14 +121,14 @@ Latest local result, measured on 2026-05-15 with Node `v22.17.0`:
 
 | Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Faster side |
 | --- | --- | --- | ---: | ---: | ---: | ---: |
-| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 114,682.19 | 849,805.39 | 11.77 | Insere 7.41x |
-| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,132,572.94 | 3,399,279.35 | 1.47 | Baseline 1.22x |
-| script event bus direct callbacks setup+publish | Map keyed callbacks | InsereEventBus publish | 7,701,786.81 | 7,262,164.12 | 0.69 | Baseline 1.06x |
-| script event bus direct callbacks publish-only | Map keyed callbacks hot publish | InsereEventBus hot publish | 19,801,980.2 | 19,615,535.5 | 0.25 | Baseline 1.01x |
-| gameplay tick per-entity tasks (discouraged) | Promise microtask gameplay | Insere per-entity direct gameplay | 15,811,943.29 | 3,410,951.43 | 8.8 | Baseline 4.64x |
-| gameplay tick system task | Promise microtask gameplay | Insere frameLoop gameplay system | 16,333,641.86 | 955,414,012.74 | 0.03 | Insere 58.49x |
-| physics/animation hot loop | Plain TS hot loop | One Insere host task | 894,934,669.77 | 856,457,690.99 | 0.58 | Baseline 1.04x |
-| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 124,327.76 | 12,772,207.68 | 7.83 | Insere 102.73x |
+| per-entity lifecycle cancel | Promise Map+Abort cancel | Insere cancelGroup | 112,437.88 | 833,500.03 | 12 | Insere 7.41x |
+| script event bus targeted | Map keyed Promise bus | InsereEventBus | 4,303,666.72 | 3,166,962.25 | 1.58 | Baseline 1.36x |
+| script event bus direct callbacks setup+publish | Map keyed callbacks | InsereEventBus publish | 7,411,799.58 | 7,168,458.78 | 0.7 | Baseline 1.03x |
+| script event bus direct callbacks publish-only | Map keyed callbacks hot publish | InsereEventBus hot publish | 19,654,088.05 | 19,538,882.38 | 0.26 | Baseline 1.01x |
+| gameplay tick per-entity tasks (discouraged) | Promise microtask gameplay | Insere per-entity direct gameplay | 14,318,442.15 | 3,430,924.06 | 8.74 | Baseline 4.17x |
+| gameplay tick system task | Promise microtask gameplay | Insere frameLoop gameplay system | 16,559,947.01 | 943,396,226.42 | 0.03 | Insere 56.97x |
+| physics/animation hot loop | Plain TS hot loop | One Insere host task | 524,879,277.77 | 740,850,496.37 | 0.67 | Insere 1.41x |
+| runtime projection restart | Promise latest-only projection | Insere restartDirect projection | 139,620.23 | 13,828,580.91 | 7.23 | Insere 99.04x |
 
 Interpretation:
 

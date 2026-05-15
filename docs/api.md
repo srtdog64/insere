@@ -5,6 +5,11 @@
 The root package still exports the lower-level building blocks, but application
 adapters should usually start from the API facade:
 
+```ts
+import { createInsereApi } from "@exornea/insere";
+import { createInsereApi as createApi } from "@exornea/insere/api";
+```
+
 The API facade is a scheduler facade, not an executor facade. It gives a host
 one key space, one clock, policy Result reports, and supervision hooks over the
 direct and effect schedulers. It does not run work outside the host tick.

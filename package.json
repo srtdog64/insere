@@ -41,9 +41,25 @@
       "types": "./dist/api.d.ts",
       "default": "./dist/api.js"
     },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "default": "./dist/core.js"
+    },
+    "./effect": {
+      "types": "./dist/effect.d.ts",
+      "default": "./dist/effect.js"
+    },
+    "./task": {
+      "types": "./dist/task.d.ts",
+      "default": "./dist/task.js"
+    },
     "./host": {
       "types": "./dist/host.d.ts",
       "default": "./dist/host.js"
+    },
+    "./logging": {
+      "types": "./dist/logging.d.ts",
+      "default": "./dist/logging.js"
     },
     "./mailbox": {
       "types": "./dist/mailbox.d.ts",
@@ -68,18 +84,20 @@
   ],
   "scripts": {
     "benchmark": "npm run build && node benchmark/compare.mjs",
+    "benchmark:gate": "npm run build && node benchmark/compare.mjs --gate",
     "benchmark:geukbit": "npm run build && node benchmark/geukbit-scale.mjs",
+    "benchmark:geukbit:gate": "npm run build && node benchmark/geukbit-scale.mjs --gate",
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "check:publish": "npm run check",
-    "check:release": "npm run check && npm run verify:geukbit",
+    "check:release": "npm run check && npm run benchmark:gate && npm run verify:geukbit",
     "pack:check": "npm pack --dry-run",
     "prepack": "npm run build",
     "prebuild": "rimraf dist",
     "prepublishOnly": "npm run check:publish",
     "smoke:exports": "node scripts/smoke-exports.mjs",
     "stress:geukbit": "vitest run test/geukbit-scale.test.ts",
-    "verify:geukbit": "npm run stress:geukbit && npm run benchmark:geukbit",
+    "verify:geukbit": "npm run stress:geukbit && npm run benchmark:geukbit:gate",
     "test": "vitest run",
     "typecheck:test": "tsc -p tsconfig.test.json",
     "check": "npm run build && npm run typecheck:test && npm test && npm run smoke:exports && npm run pack:check"

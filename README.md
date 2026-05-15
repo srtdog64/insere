@@ -238,6 +238,9 @@ adapter, and AbortSignal I/O conventions.
 See [`docs/performance.md`](docs/performance.md) for the current benchmark
 against plain TypeScript/JavaScript baselines.
 
+See [`docs/stability.md`](docs/stability.md) for the package boundary, public
+entrypoints, and release gates.
+
 Run `npm run check` for the standard build, test typecheck, test,
 export-smoke, and pack gate.
 Run `npm run verify:geukbit` for the Geukbit scale stress and benchmark gate,

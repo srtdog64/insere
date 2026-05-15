@@ -12,6 +12,7 @@ const gameplayEntities = Number(process.env.GEUKBIT_GAMEPLAY_ENTITIES ?? 10_000)
 const physicsEntities = Number(process.env.GEUKBIT_PHYSICS_ENTITIES ?? 100_000);
 const projectionRestarts = Number(process.env.GEUKBIT_PROJECTION_RESTARTS ?? 100_000);
 const repeats = Number(process.env.GEUKBIT_BENCH_REPEATS ?? 9);
+const gate = process.argv.includes("--gate");
 
 let sink = 0;
 
@@ -457,3 +458,43 @@ for (const row of rows) {
 
 console.log("");
 console.log(`sink=${sink}`);
+
+if (gate) {
+  assertInsereFaster("per-entity lifecycle cancel", 1.5);
+  assertInsereFaster("gameplay tick system task", 2);
+  assertInsereFaster("runtime projection restart", 2);
+  assertNotSlowerThan("script event bus direct callbacks publish-only", 0.5);
+  assertNotSlowerThan("physics/animation hot loop", 0.5);
+}
+
+function assertInsereFaster(scenario, minRatio) {
+  const row = rows.find((item) => item.scenario === scenario);
+
+  if (!row) {
+    throw new Error(`Missing Geukbit benchmark scenario: ${scenario}`);
+  }
+
+  const ratio = row.insere.unitsPerSecond / row.baseline.unitsPerSecond;
+
+  if (ratio < minRatio) {
+    throw new Error(
+      `${scenario} gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
+    );
+  }
+}
+
+function assertNotSlowerThan(scenario, minRatio) {
+  const row = rows.find((item) => item.scenario === scenario);
+
+  if (!row) {
+    throw new Error(`Missing Geukbit benchmark scenario: ${scenario}`);
+  }
+
+  const ratio = row.insere.unitsPerSecond / row.baseline.unitsPerSecond;
+
+  if (ratio < minRatio) {
+    throw new Error(
+      `${scenario} gate failed: Insere ${formatNumber(ratio)}x baseline, expected >= ${minRatio}x.`
+    );
+  }
+}

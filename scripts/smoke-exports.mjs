@@ -14,6 +14,10 @@ import {
   createInsereApi,
   createConsoleInsereLogger
 } from "../dist/api.js";
+import { DirectInsereTask as DirectInsereTaskFromCore } from "../dist/core.js";
+import { ok as okFromEffect } from "../dist/effect.js";
+import { createBufferedInsereLogger as createBufferedLoggerFromSubpath } from "../dist/logging.js";
+import { directFrameTask as directFrameTaskFromSubpath } from "../dist/task.js";
 import { createInsereHostAdapter as createHostFromSubpath } from "../dist/host.js";
 import { createInsereEventBus as createEventBusFromSubpath } from "../dist/event-bus.js";
 import { createInsereMailbox as createMailboxFromSubpath } from "../dist/mailbox.js";
@@ -152,6 +156,10 @@ if (!aborted) {
 
 if (
   typeof createConsoleInsereLogger() !== "function" ||
+  typeof DirectInsereTaskFromCore !== "function" ||
+  okFromEffect("ok").ok !== true ||
+  typeof createBufferedLoggerFromSubpath() !== "object" ||
+  typeof directFrameTaskFromSubpath("task", () => undefined) !== "object" ||
   typeof createHostFromSubpath() !== "object" ||
   typeof createEventBusFromSubpath() !== "object" ||
   typeof createMailboxFromSubpath() !== "object" ||
