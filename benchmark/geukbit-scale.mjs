@@ -73,9 +73,26 @@ async function measureAsync(name, units, run) {
 
 function toMeasurement(name, units, samples) {
   const bestMs = Math.min(...samples);
+  const medianMs = median(samples);
   const unitsPerSecond = units / (bestMs / 1_000);
+  const gateUnitsPerSecond = units / (medianMs / 1_000);
 
-  return { name, units, bestMs, unitsPerSecond };
+  return { name, units, bestMs, medianMs, unitsPerSecond, gateUnitsPerSecond };
+}
+
+function median(samples) {
+  if (samples.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const sorted = [...samples].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 1) {
+    return sorted[middle];
+  }
+
+  return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
 function fasterSide(insere, baseline) {
@@ -474,11 +491,11 @@ function assertInsereFaster(scenario, minRatio) {
     throw new Error(`Missing Geukbit benchmark scenario: ${scenario}`);
   }
 
-  const ratio = row.insere.unitsPerSecond / row.baseline.unitsPerSecond;
+  const ratio = row.insere.gateUnitsPerSecond / row.baseline.gateUnitsPerSecond;
 
   if (ratio < minRatio) {
     throw new Error(
-      `${scenario} gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
+      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
     );
   }
 }
@@ -490,11 +507,11 @@ function assertNotSlowerThan(scenario, minRatio) {
     throw new Error(`Missing Geukbit benchmark scenario: ${scenario}`);
   }
 
-  const ratio = row.insere.unitsPerSecond / row.baseline.unitsPerSecond;
+  const ratio = row.insere.gateUnitsPerSecond / row.baseline.gateUnitsPerSecond;
 
   if (ratio < minRatio) {
     throw new Error(
-      `${scenario} gate failed: Insere ${formatNumber(ratio)}x baseline, expected >= ${minRatio}x.`
+      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x baseline, expected >= ${minRatio}x.`
     );
   }
 }

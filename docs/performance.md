@@ -32,9 +32,10 @@ That runs the standard package gate plus the Geukbit scale stress and benchmark
 gate. Use `npm run check` for normal local validation when the full benchmark
 gate is not needed.
 
-The non-gate benchmark scripts print tables only. The `*:gate` scripts fail the
-process when conservative release ratios are missed. See
-[`stability.md`](stability.md) for the current gate thresholds.
+The non-gate benchmark scripts print tables only. Tables report best samples.
+The `*:gate` scripts fail the process when conservative median-sample release
+ratios are missed. See [`stability.md`](stability.md) for the current gate
+thresholds.
 
 Default workloads:
 

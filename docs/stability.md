@@ -69,6 +69,7 @@ npm run check:release
 
 `check:release` includes benchmark gates. Benchmarks are not exact product
 latency models, so the gates use conservative ratios instead of exact timings.
+`npm publish` runs the same release gate through `prepublishOnly`.
 
 Required P0 ratios:
 
@@ -99,4 +100,5 @@ avoid breaking these surfaces without an explicit version note:
 - mailbox and event-bus buffering policy names
 
 Performance regressions should be treated as breaking for the P0 paths even
-when TypeScript types still compile.
+when TypeScript types still compile. Tables report best samples for readability;
+release gates use median sample ratios to avoid passing on a single lucky run.

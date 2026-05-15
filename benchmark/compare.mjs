@@ -96,9 +96,26 @@ function measurePrepared(name, iterations, setup, run) {
 
 function toMeasurement(name, iterations, samples) {
   const bestMs = Math.min(...samples);
+  const medianMs = median(samples);
   const opsPerSecond = iterations / (bestMs / 1_000);
+  const gateOpsPerSecond = iterations / (medianMs / 1_000);
 
-  return { name, iterations, bestMs, opsPerSecond };
+  return { name, iterations, bestMs, medianMs, opsPerSecond, gateOpsPerSecond };
+}
+
+function median(samples) {
+  if (samples.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const sorted = [...samples].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 1) {
+    return sorted[middle];
+  }
+
+  return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
 function fasterSide(insere, baseline) {
@@ -660,11 +677,11 @@ function assertInsereFaster(scenario, rows, minRatio) {
     throw new Error(`Missing benchmark scenario: ${scenario}`);
   }
 
-  const ratio = row.insere.opsPerSecond / row.baseline.opsPerSecond;
+  const ratio = row.insere.gateOpsPerSecond / row.baseline.gateOpsPerSecond;
 
   if (ratio < minRatio) {
     throw new Error(
-      `${scenario} gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
+      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
     );
   }
 }
