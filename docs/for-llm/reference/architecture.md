@@ -144,7 +144,7 @@ function buildAutosaveTask(deps: { db: Db; clock: Clock }) {
   };
 }
 
-api.applyEffect("autosave", buildAutosaveTask({ db, clock }));
+api.applyEffectResult("autosave", buildAutosaveTask({ db, clock }));
 ```
 
 For tests, pass a different `deps` object. For runtime substitution, rebuild

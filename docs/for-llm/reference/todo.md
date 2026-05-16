@@ -137,22 +137,18 @@ Reference shape:
 interface TaskRuntimePort {
   tick(now: number): InsereResult<void>;
   runIdle(): InsereResult<void>;
-  waitFrame(key: string, step: DirectInsereStep): void;
-  frameLoop(key: string, step: DirectInsereFrameLoopStep): boolean;
-  applyDirect(
+  frameLoopResult(
     key: string,
-    step: DirectInsereStep,
-    policy: InsereTaskPolicy,
-    start?: DirectInsereTaskStart
-  ): boolean;
+    step: DirectInsereFrameLoopStep,
+    policy: InsereTaskPolicy
+  ): InsereTaskApplyResult;
   applyDirectResult(
     key: string,
     step: DirectInsereStep,
     policy: InsereTaskPolicy,
     start?: DirectInsereTaskStart
   ): InsereTaskApplyResult;
-  apply(key: string, effect: InsereEffect, policy: InsereTaskPolicy): boolean;
-  applyResult(
+  applyEffectResult(
     key: string,
     effect: InsereEffect,
     policy: InsereTaskPolicy

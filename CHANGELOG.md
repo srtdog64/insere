@@ -37,6 +37,15 @@ cooperative scheduler for keyed, cancellable TypeScript editor workloads.
   - `waitUniqueBusEvent`
   - `InsereHostAdapter.emitUniqueTo`
   - `InsereHostAdapter.waitUniqueBusEvent`
+- Explicit unsafe wrapper names for throw-oriented command paths:
+  - `applyTaskUnsafe`
+  - `applyDirectTaskUnsafe`
+  - `InsereApi.applyDirectUnsafe`
+  - `InsereApi.applyEffectUnsafe`
+  - `InsereApi.waitFrameUnsafe`
+  - `InsereApi.frameLoopUnsafe`
+- Root `AGENT.md` policy for Result-first boundaries, unsafe wrappers,
+  structured logging, host-clock timing, and event-bus semantics.
 - Reentrant direct-core tests for frame queue draining and `cancelGroup`.
 - Failure-isolation tests that verify later runnable direct tasks and effect
   routines still advance after one task fails.
@@ -64,6 +73,9 @@ cooperative scheduler for keyed, cancellable TypeScript editor workloads.
 - Event-bus `waitUnique()` / `emitUnique()` skip listener, buffering, and
   multi-waiter delivery paths for explicit unique-key suspension.
 - API failure draining no longer uses `Array.shift()`.
+- `InsereApi.applyDirectResult()` and `applyEffectResult()` now split policy
+  decisions, restart fast paths, delegated policy application, and failure
+  conversion into named private steps.
 - Event-bus listener delivery is shared across `emit`, `publish`, and `notify`
   to avoid duplicated slot-union branching.
 

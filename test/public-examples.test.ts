@@ -44,22 +44,22 @@ describe("public examples", () => {
     let dragRuns = 0;
     let autosaveRuns = 0;
 
-    api.restartDirect("projection:scene", (ctx) => {
+    api.applyDirectResult("projection:scene", (ctx) => {
       projectionRuns += 1;
 
       if (ctx.frame === 0) {
         ctx.waitFrame();
       }
-    });
+    }, "restart");
 
-    api.waitFrame("drag:preview", () => {
+    api.applyDirectResult("drag:preview", () => {
       dragRuns += 1;
-    });
+    }, "restart", "frame");
 
-    editor.applyDirect("autosave", () => {
+    editor.applyDirectResult("autosave", () => {
       autosaveRuns += 1;
     }, "skip", "frame");
-    api.frameLoop("gameplay:systems", (ctx) => {
+    api.frameLoopResult("gameplay:systems", (ctx) => {
       if (ctx.frame > 1) {
         return false;
       }
@@ -99,14 +99,14 @@ describe("public examples", () => {
       }
     });
 
-    host.api.applyEffect("input:pointerup", function* (ctx) {
+    host.api.applyEffectResult("input:pointerup", function* (ctx) {
       const event = yield* host.waitEvent(
         (item) => item.type === "pointerup"
       )(ctx);
       yield* dispatch<AppEvent>({ type: "commitPointer", event })(ctx);
     });
 
-    host.api.applyDirect("entity:42:events", (ctx) => {
+    host.api.applyDirectResult("entity:42:events", (ctx) => {
       const unsubscribe = host.subscribeTo(
         "entity:42",
         (event) => seen.push(event),
@@ -117,7 +117,7 @@ describe("public examples", () => {
       ctx.waitFrame();
     });
 
-    host.api.applyEffect("entity:42:next-hit", function* (ctx) {
+    host.api.applyEffectResult("entity:42:next-hit", function* (ctx) {
       const event = yield* host.waitUniqueBusEvent("entity:42")(ctx);
       yield* dispatch<AppEvent>({ type: "scriptEvent", event })(ctx);
     });

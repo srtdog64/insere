@@ -137,7 +137,7 @@ function insereEntityLifecycleCancel() {
   });
 
   for (let index = 0; index < entityTasks; index += 1) {
-    host.api.applyDirect(`entity:${index}:script:main`, (ctx) => {
+    host.api.applyDirectResult(`entity:${index}:script:main`, (ctx) => {
       ctx.onCancel(() => ctx.dispatch(index));
       ctx.waitFrame();
     });
@@ -282,13 +282,13 @@ function insereGameplayTickPerEntity() {
   const host = createInsereHostAdapter();
 
   for (let entity = 0; entity < gameplayEntities; entity += 1) {
-    host.api.waitFrame(`gameplay:entity:${entity}`, (ctx) => {
+    host.api.applyDirectResult(`gameplay:entity:${entity}`, (ctx) => {
       sink += 1;
 
       if (ctx.frame < frames) {
         ctx.waitFrame();
       }
-    });
+    }, "restart", "frame");
   }
 
   for (let frame = 1; frame <= frames; frame += 1) {
@@ -300,7 +300,7 @@ function insereGameplaySystemTick() {
   const frames = 3;
   const host = createInsereHostAdapter();
 
-  host.api.frameLoop("gameplay:systems", (ctx) => {
+  host.api.frameLoopResult("gameplay:systems", (ctx) => {
     for (let entity = 0; entity < gameplayEntities; entity += 1) {
       sink += 1;
     }
@@ -333,7 +333,7 @@ function inserePhysicsHostTask() {
   const host = createInsereHostAdapter();
   velocity.fill(2);
 
-  host.api.frameLoop("physics:step", (ctx) => {
+  host.api.frameLoopResult("physics:step", (ctx) => {
     for (let entity = 0; entity < physicsEntities; entity += 1) {
       position[entity] += velocity[entity] * 0.5;
     }
@@ -389,14 +389,14 @@ function insereProjectionRestart() {
   });
 
   for (let version = 0; version < projectionRestarts; version += 1) {
-    host.api.restartDirect("projection:scene:main", (ctx) => {
+    host.api.applyDirectResult("projection:scene:main", (ctx) => {
       if (ctx.frame === 0) {
         ctx.waitFrame();
         return;
       }
 
       ctx.dispatch(version);
-    });
+    }, "restart");
   }
 
   host.tick(1);

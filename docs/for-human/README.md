@@ -42,15 +42,15 @@ const api = createInsereApi({
   logger
 });
 
-api.restartDirect("projection:scene", (ctx) => {
+api.applyDirectResult("projection:scene", (ctx) => {
   rebuildProjection(ctx.delta);
-});
+}, "restart");
 
-api.waitFrame("preview:drag", () => {
+api.applyDirectResult("preview:drag", () => {
   updateDragPreview();
-});
+}, "restart", "frame");
 
-api.frameLoop("gameplay:systems", (ctx) => {
+api.frameLoopResult("gameplay:systems", (ctx) => {
   runGameplaySystems(ctx.delta);
   return scene.isRunning;
 });
@@ -65,7 +65,7 @@ import { createInsereApi, dispatch, sequence, sleep } from "@exornea/insere";
 
 const api = createInsereApi();
 
-api.applyEffect(
+api.applyEffectResult(
   "autosave",
   sequence([sleep(250), dispatch({ type: "autosave:flush" })]),
   "skip"

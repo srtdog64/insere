@@ -19,6 +19,7 @@ import { DirectInsereTask as DirectInsereTaskFromCore } from "../dist/core.js";
 import { ok as okFromEffect } from "../dist/effect.js";
 import { createBufferedInsereLogger as createBufferedLoggerFromSubpath } from "../dist/logging.js";
 import { directFrameTask as directFrameTaskFromSubpath } from "../dist/task.js";
+import { applyTaskUnsafe as applyTaskUnsafeFromSubpath } from "../dist/task.js";
 import { createInsereHostAdapter as createHostFromSubpath } from "../dist/host.js";
 import { createInsereEventBus as createEventBusFromSubpath } from "../dist/event-bus.js";
 import { createInsereMailbox as createMailboxFromSubpath } from "../dist/mailbox.js";
@@ -35,12 +36,12 @@ const api = createInsereApi({
   }
 });
 
-api.waitFrame("direct:preview", (ctx) => ctx.dispatch(`direct:${ctx.delta}`));
-api.frameLoop("direct:loop", (ctx) => {
+api.applyDirectResult("direct:preview", (ctx) => ctx.dispatch(`direct:${ctx.delta}`), "restart", "frame");
+api.frameLoopResult("direct:loop", (ctx) => {
   ctx.dispatch(`loop:${ctx.frame}`);
   return false;
 });
-api.applyEffect("effect:delta", function* (ctx) {
+api.applyEffectResult("effect:delta", function* (ctx) {
   const delta = yield* currentDelta()(ctx);
   yield* dispatch(`effect:${delta}`)(ctx);
 });
@@ -59,9 +60,9 @@ if (typeof frameLoopStep(() => false) !== "function") {
   throw new Error("frameLoopStep export is not usable.");
 }
 
-api.waitFrame("broken", () => {
+api.applyDirectResult("broken", () => {
   throw new Error("boom");
-});
+}, "restart", "frame");
 api.tick(48);
 
 if (!events.includes("failed:broken")) {
@@ -113,7 +114,7 @@ const host = createInsereHostAdapter({
   dispatch: (event) => hostEvents.push(event)
 });
 
-host.api.applyEffect("input", function* (ctx) {
+host.api.applyEffectResult("input", function* (ctx) {
   const event = yield* waitEvent(host.mailbox, (item) => item === "commit")(ctx);
   yield* dispatch(event)(ctx);
 });
@@ -125,7 +126,7 @@ if (hostEvents[0] !== "commit") {
   throw new Error("Host adapter mailbox did not dispatch.");
 }
 
-host.api.applyEffect("unique-input", function* (ctx) {
+host.api.applyEffectResult("unique-input", function* (ctx) {
   const event = yield* waitUniqueBusEvent(host.eventBus, "entity:1")(ctx);
   yield* dispatch(`unique:${event}`)(ctx);
 });
@@ -140,11 +141,11 @@ if (!hostEvents.includes("unique:commit")) {
 const hostConsume = createInsereHostAdapter({
   dispatch: (event) => hostEvents.push(event)
 });
-hostConsume.api.applyEffect("first", function* (ctx) {
+hostConsume.api.applyEffectResult("first", function* (ctx) {
   const event = yield* hostConsume.waitEvent()(ctx);
   yield* dispatch(`first:${event}`)(ctx);
 });
-hostConsume.api.applyEffect("second", function* (ctx) {
+hostConsume.api.applyEffectResult("second", function* (ctx) {
   const event = yield* hostConsume.waitEvent()(ctx);
   yield* dispatch(`second:${event}`)(ctx);
 });
@@ -181,6 +182,7 @@ if (
   okFromEffect("ok").ok !== true ||
   typeof createBufferedLoggerFromSubpath() !== "object" ||
   typeof directFrameTaskFromSubpath("task", () => undefined) !== "object" ||
+  typeof applyTaskUnsafeFromSubpath !== "function" ||
   typeof createHostFromSubpath() !== "object" ||
   typeof createEventBusFromSubpath() !== "object" ||
   typeof createMailboxFromSubpath() !== "object" ||

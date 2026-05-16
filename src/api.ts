@@ -258,7 +258,20 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     };
   }
 
+  /**
+   * @deprecated Use applyDirectResult for Result-first host code or
+   * applyDirectUnsafe when exceptions are intentional.
+   */
   applyDirect(
+    key: string,
+    step: DirectInsereStep<TState, TEvent>,
+    policy?: InsereTaskPolicy,
+    start?: DirectInsereTaskStart
+  ): boolean {
+    return this.applyDirectUnsafe(key, step, policy, start);
+  }
+
+  applyDirectUnsafe(
     key: string,
     step: DirectInsereStep<TState, TEvent>,
     policy?: InsereTaskPolicy,
@@ -283,69 +296,20 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       const resolvedPolicy = policy ?? "restart";
       const keyExisted = this.has(key);
 
-      if (resolvedPolicy === "skip" && keyExisted) {
-        return ok({
-          key,
-          policy: resolvedPolicy,
-          applied: false,
-          status: "skipped"
-        });
+      const skip = this.#skipExistingTask(key, resolvedPolicy, keyExisted);
+      if (skip) {
+        return skip;
       }
 
       if (resolvedPolicy === "spawn" && keyExisted) {
-        const error = new Error(`InsereApi task already exists: ${key}`);
-        this.#logBug("applyDirectResult", error, key, resolvedPolicy, {
-          start: start ?? "run"
-        });
-        return err(this.#failure("applyDirectResult", error, key, resolvedPolicy, {
-          start: start ?? "run"
-        }));
+        return this.#duplicateDirectSpawn(key, resolvedPolicy, start);
       }
 
       if (resolvedPolicy === "restart") {
-        if (this.effect.has(key)) {
-          this.effect.cancel(key);
-        }
-
-        if (start === "frame") {
-          this.direct.cancel(key);
-          this.direct.waitFrame(key, step);
-        } else {
-          this.direct.restart(key, step);
-        }
-
-        this.#rememberDirect(key, step, start);
-        return ok({
-          key,
-          policy: resolvedPolicy,
-          applied: true,
-          status: keyExisted ? "restarted" : "started"
-        });
+        return this.#applyDirectRestart(key, step, start, keyExisted);
       }
 
-      const result = applyDirectTaskResult(
-        this.direct,
-        directTask(key, step, resolvedPolicy, start),
-        resolvedPolicy
-      );
-
-      if (!result.ok) {
-        const failure = this.#failure(
-          "applyDirectResult",
-          result.error.cause ?? result.error,
-          key,
-          resolvedPolicy,
-          { start: start ?? "run" }
-        );
-        this.#logFailure(failure);
-        return err(failure);
-      }
-
-      if (result.ok && result.value.applied) {
-        this.#rememberDirect(key, step, start);
-      }
-
-      return result;
+      return this.#applyDirectPolicy(key, step, resolvedPolicy, start);
     } catch (error) {
       const failure = this.#failure("applyDirectResult", error, key, policy, {
         start: start ?? "run"
@@ -355,20 +319,44 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     }
   }
 
+  /**
+   * @deprecated Use applyDirectResult(..., "restart", "frame") or
+   * waitFrameUnsafe when exceptions are intentional.
+   */
   waitFrame(
     key: string,
     step: DirectInsereStep<TState, TEvent>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.applyDirect(key, step, policy, "frame");
+    return this.waitFrameUnsafe(key, step, policy);
   }
 
+  waitFrameUnsafe(
+    key: string,
+    step: DirectInsereStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyDirectUnsafe(key, step, policy, "frame");
+  }
+
+  /**
+   * @deprecated Use frameLoopResult or frameLoopUnsafe when exceptions are
+   * intentional.
+   */
   frameLoop(
     key: string,
     step: DirectInsereFrameLoopStep<TState, TEvent>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.applyDirect(key, frameLoopStep(step), policy, "frame");
+    return this.frameLoopUnsafe(key, step, policy);
+  }
+
+  frameLoopUnsafe(
+    key: string,
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyDirectUnsafe(key, frameLoopStep(step), policy, "frame");
   }
 
   frameLoopResult(
@@ -393,7 +381,19 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
     }
   }
 
+  /**
+   * @deprecated Use applyEffectResult for Result-first host code or
+   * applyEffectUnsafe when exceptions are intentional.
+   */
   applyEffect<TValue>(
+    key: string,
+    source: InsereEffect<TState, TEvent, TValue>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyEffectUnsafe(key, source, policy);
+  }
+
+  applyEffectUnsafe<TValue>(
     key: string,
     source: InsereEffect<TState, TEvent, TValue>,
     policy?: InsereTaskPolicy
@@ -416,63 +416,167 @@ export class InsereApi<TState = unknown, TEvent = unknown> {
       const resolvedPolicy = policy ?? "restart";
       const keyExisted = this.has(key);
 
-      if (resolvedPolicy === "skip" && keyExisted) {
-        return ok({
-          key,
-          policy: resolvedPolicy,
-          applied: false,
-          status: "skipped"
-        });
+      const skip = this.#skipExistingTask(key, resolvedPolicy, keyExisted);
+      if (skip) {
+        return skip;
       }
 
       if (resolvedPolicy === "spawn" && keyExisted) {
-        const error = new Error(`InsereApi task already exists: ${key}`);
-        this.#logBug("applyEffectResult", error, key, resolvedPolicy);
-        return err(this.#failure("applyEffectResult", error, key, resolvedPolicy));
+        return this.#duplicateEffectSpawn(key, resolvedPolicy);
       }
 
       if (resolvedPolicy === "restart") {
-        if (this.direct.has(key)) {
-          this.direct.cancel(key);
-        }
-
-        this.effect.restart(key, toRoutine(source));
-        this.#rememberEffect(key, source);
-        return ok({
-          key,
-          policy: resolvedPolicy,
-          applied: true,
-          status: keyExisted ? "restarted" : "started"
-        });
+        return this.#applyEffectRestart(key, source, keyExisted);
       }
 
-      const result = applyTaskResult(
-        this.effect,
-        task(key, source, resolvedPolicy),
-        resolvedPolicy
-      );
-
-      if (!result.ok) {
-        const failure = this.#failure(
-          "applyEffectResult",
-          result.error.cause ?? result.error,
-          key,
-          resolvedPolicy
-        );
-        this.#logFailure(failure);
-        return err(failure);
-      }
-
-      if (result.ok && result.value.applied) {
-        this.#rememberEffect(key, source);
-      }
-
-      return result;
+      return this.#applyEffectPolicy(key, source, resolvedPolicy);
     } catch (error) {
       const failure = this.#failure("applyEffectResult", error, key, policy);
       this.#logFailure(failure);
       return err(failure);
     }
+  }
+
+  #skipExistingTask(
+    key: string,
+    policy: InsereTaskPolicy,
+    keyExisted: boolean
+  ): InsereTaskApplyResult | undefined {
+    if (policy !== "skip" || !keyExisted) {
+      return undefined;
+    }
+
+    return ok({
+      key,
+      policy,
+      applied: false,
+      status: "skipped"
+    });
+  }
+
+  #duplicateDirectSpawn(
+    key: string,
+    policy: InsereTaskPolicy,
+    start: DirectInsereTaskStart | undefined
+  ): InsereTaskApplyResult {
+    const error = new Error(`InsereApi task already exists: ${key}`);
+    const data = { start: start ?? "run" };
+    this.#logBug("applyDirectResult", error, key, policy, data);
+    return err(this.#failure("applyDirectResult", error, key, policy, data));
+  }
+
+  #duplicateEffectSpawn(
+    key: string,
+    policy: InsereTaskPolicy
+  ): InsereTaskApplyResult {
+    const error = new Error(`InsereApi task already exists: ${key}`);
+    this.#logBug("applyEffectResult", error, key, policy);
+    return err(this.#failure("applyEffectResult", error, key, policy));
+  }
+
+  #applyDirectRestart(
+    key: string,
+    step: DirectInsereStep<TState, TEvent>,
+    start: DirectInsereTaskStart | undefined,
+    keyExisted: boolean
+  ): InsereTaskApplyResult {
+    if (this.effect.has(key)) {
+      this.effect.cancel(key);
+    }
+
+    if (start === "frame") {
+      this.direct.cancel(key);
+      this.direct.waitFrame(key, step);
+    } else {
+      this.direct.restart(key, step);
+    }
+
+    this.#rememberDirect(key, step, start);
+    return ok({
+      key,
+      policy: "restart",
+      applied: true,
+      status: keyExisted ? "restarted" : "started"
+    });
+  }
+
+  #applyEffectRestart<TValue>(
+    key: string,
+    source: InsereEffect<TState, TEvent, TValue>,
+    keyExisted: boolean
+  ): InsereTaskApplyResult {
+    if (this.direct.has(key)) {
+      this.direct.cancel(key);
+    }
+
+    this.effect.restart(key, toRoutine(source));
+    this.#rememberEffect(key, source);
+    return ok({
+      key,
+      policy: "restart",
+      applied: true,
+      status: keyExisted ? "restarted" : "started"
+    });
+  }
+
+  #applyDirectPolicy(
+    key: string,
+    step: DirectInsereStep<TState, TEvent>,
+    policy: InsereTaskPolicy,
+    start: DirectInsereTaskStart | undefined
+  ): InsereTaskApplyResult {
+    const result = applyDirectTaskResult(
+      this.direct,
+      directTask(key, step, policy, start),
+      policy
+    );
+
+    if (!result.ok) {
+      const failure = this.#failure(
+        "applyDirectResult",
+        result.error.cause ?? result.error,
+        key,
+        policy,
+        { start: start ?? "run" }
+      );
+      this.#logFailure(failure);
+      return err(failure);
+    }
+
+    if (result.value.applied) {
+      this.#rememberDirect(key, step, start);
+    }
+
+    return result;
+  }
+
+  #applyEffectPolicy<TValue>(
+    key: string,
+    source: InsereEffect<TState, TEvent, TValue>,
+    policy: InsereTaskPolicy
+  ): InsereTaskApplyResult {
+    const result = applyTaskResult(
+      this.effect,
+      task(key, source, policy),
+      policy
+    );
+
+    if (!result.ok) {
+      const failure = this.#failure(
+        "applyEffectResult",
+        result.error.cause ?? result.error,
+        key,
+        policy
+      );
+      this.#logFailure(failure);
+      return err(failure);
+    }
+
+    if (result.value.applied) {
+      this.#rememberEffect(key, source);
+    }
+
+    return result;
   }
 
   restartEffect<TValue>(
@@ -915,13 +1019,26 @@ export class InsereApiScope<TState = unknown, TEvent = unknown> {
     };
   }
 
+  /**
+   * @deprecated Use applyDirectResult for Result-first host code or
+   * applyDirectUnsafe when exceptions are intentional.
+   */
   applyDirect(
     parts: string | readonly string[],
     step: DirectInsereStep<TState, TEvent>,
     policy?: InsereTaskPolicy,
     start?: DirectInsereTaskStart
   ): boolean {
-    return this.#api.applyDirect(this.#key(parts), step, policy, start);
+    return this.applyDirectUnsafe(parts, step, policy, start);
+  }
+
+  applyDirectUnsafe(
+    parts: string | readonly string[],
+    step: DirectInsereStep<TState, TEvent>,
+    policy?: InsereTaskPolicy,
+    start?: DirectInsereTaskStart
+  ): boolean {
+    return this.#api.applyDirectUnsafe(this.#key(parts), step, policy, start);
   }
 
   applyDirectResult(
@@ -933,20 +1050,44 @@ export class InsereApiScope<TState = unknown, TEvent = unknown> {
     return this.#api.applyDirectResult(this.#key(parts), step, policy, start);
   }
 
+  /**
+   * @deprecated Use applyDirectResult(..., "restart", "frame") or
+   * waitFrameUnsafe when exceptions are intentional.
+   */
   waitFrame(
     parts: string | readonly string[],
     step: DirectInsereStep<TState, TEvent>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.#api.waitFrame(this.#key(parts), step, policy);
+    return this.waitFrameUnsafe(parts, step, policy);
   }
 
+  waitFrameUnsafe(
+    parts: string | readonly string[],
+    step: DirectInsereStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.#api.waitFrameUnsafe(this.#key(parts), step, policy);
+  }
+
+  /**
+   * @deprecated Use frameLoopResult or frameLoopUnsafe when exceptions are
+   * intentional.
+   */
   frameLoop(
     parts: string | readonly string[],
     step: DirectInsereFrameLoopStep<TState, TEvent>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.#api.frameLoop(this.#key(parts), step, policy);
+    return this.frameLoopUnsafe(parts, step, policy);
+  }
+
+  frameLoopUnsafe(
+    parts: string | readonly string[],
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.#api.frameLoopUnsafe(this.#key(parts), step, policy);
   }
 
   frameLoopResult(
@@ -957,12 +1098,24 @@ export class InsereApiScope<TState = unknown, TEvent = unknown> {
     return this.#api.frameLoopResult(this.#key(parts), step, policy);
   }
 
+  /**
+   * @deprecated Use applyEffectResult for Result-first host code or
+   * applyEffectUnsafe when exceptions are intentional.
+   */
   applyEffect<TValue>(
     parts: string | readonly string[],
     source: InsereEffect<TState, TEvent, TValue>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.#api.applyEffect(this.#key(parts), source, policy);
+    return this.applyEffectUnsafe(parts, source, policy);
+  }
+
+  applyEffectUnsafe<TValue>(
+    parts: string | readonly string[],
+    source: InsereEffect<TState, TEvent, TValue>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.#api.applyEffectUnsafe(this.#key(parts), source, policy);
   }
 
   applyEffectResult<TValue>(

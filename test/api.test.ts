@@ -394,4 +394,22 @@ describe("InsereApi", () => {
 
     expect(() => api.tick(1)).toThrow(original);
   });
+
+  it("keeps throwing command paths explicit through Unsafe wrappers", () => {
+    const api = createInsereApi();
+
+    api.applyEffectResult("shared", sleep(10));
+
+    expect(() =>
+      api.applyDirectUnsafe(
+        "shared",
+        (ctx) => ctx.complete(),
+        "spawn",
+        "frame"
+      )
+    ).toThrow("InsereApi task already exists: shared");
+    expect(() =>
+      api.applyEffectUnsafe("shared", sleep(1), "spawn")
+    ).toThrow("InsereApi task already exists: shared");
+  });
 });

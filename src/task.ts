@@ -207,7 +207,19 @@ export function restartTask<TState, TEvent, TValue>(
   runtime.restart(item.key, toRoutine(item.effect));
 }
 
+/**
+ * @deprecated Use applyTaskResult for Result-first code or applyTaskUnsafe when
+ * exceptions are intentional.
+ */
 export function applyTask<TState, TEvent, TValue>(
+  runtime: Insere<TState, TEvent>,
+  item: InsereTask<TState, TEvent, TValue>,
+  policy: InsereTaskPolicy = item.policy ?? "restart"
+): boolean {
+  return applyTaskUnsafe(runtime, item, policy);
+}
+
+export function applyTaskUnsafe<TState, TEvent, TValue>(
   runtime: Insere<TState, TEvent>,
   item: InsereTask<TState, TEvent, TValue>,
   policy: InsereTaskPolicy = item.policy ?? "restart"
@@ -265,7 +277,19 @@ export function restartDirectTask<TState, TEvent>(
   runtime.restart(item.key, item.step);
 }
 
+/**
+ * @deprecated Use applyDirectTaskResult for Result-first code or
+ * applyDirectTaskUnsafe when exceptions are intentional.
+ */
 export function applyDirectTask<TState, TEvent>(
+  runtime: DirectInsereTaskRuntime<TState, TEvent>,
+  item: DirectInsereTaskSpec<TState, TEvent>,
+  policy: InsereTaskPolicy = item.policy ?? "restart"
+): boolean {
+  return applyDirectTaskUnsafe(runtime, item, policy);
+}
+
+export function applyDirectTaskUnsafe<TState, TEvent>(
   runtime: DirectInsereTaskRuntime<TState, TEvent>,
   item: DirectInsereTaskSpec<TState, TEvent>,
   policy: InsereTaskPolicy = item.policy ?? "restart"
@@ -381,11 +405,22 @@ export class InsereTaskScope<TState = unknown, TEvent = unknown> {
     this.restart(this.task(parts, source));
   }
 
+  /**
+   * @deprecated Use applyResult for Result-first code or applyUnsafe when
+   * exceptions are intentional.
+   */
   apply<TValue>(
     item: InsereTask<TState, TEvent, TValue>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return applyTask(this.#runtime, item, policy);
+    return this.applyUnsafe(item, policy);
+  }
+
+  applyUnsafe<TValue>(
+    item: InsereTask<TState, TEvent, TValue>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return applyTaskUnsafe(this.#runtime, item, policy);
   }
 
   applyResult<TValue>(
@@ -395,12 +430,24 @@ export class InsereTaskScope<TState = unknown, TEvent = unknown> {
     return applyTaskResult(this.#runtime, item, policy);
   }
 
+  /**
+   * @deprecated Use applyEffectResult for Result-first code or
+   * applyEffectUnsafe when exceptions are intentional.
+   */
   applyEffect<TValue>(
     parts: string | readonly string[],
     source: InsereEffect<TState, TEvent, TValue>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.apply(this.task(parts, source, policy));
+    return this.applyEffectUnsafe(parts, source, policy);
+  }
+
+  applyEffectUnsafe<TValue>(
+    parts: string | readonly string[],
+    source: InsereEffect<TState, TEvent, TValue>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyUnsafe(this.task(parts, source, policy));
   }
 
   applyEffectResult<TValue>(
@@ -553,12 +600,24 @@ export class DirectInsereTaskScope<TState = unknown, TEvent = unknown> {
     this.spawn(this.frameTask(parts, step));
   }
 
+  /**
+   * @deprecated Use frameLoopResult or frameLoopUnsafe when exceptions are
+   * intentional.
+   */
   frameLoop(
     parts: string | readonly string[],
     step: DirectInsereFrameLoopStep<TState, TEvent>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return this.applyTask(parts, frameLoopStep(step), policy, "frame");
+    return this.frameLoopUnsafe(parts, step, policy);
+  }
+
+  frameLoopUnsafe(
+    parts: string | readonly string[],
+    step: DirectInsereFrameLoopStep<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return this.applyTaskUnsafe(parts, frameLoopStep(step), policy, "frame");
   }
 
   frameLoopResult(
@@ -569,11 +628,22 @@ export class DirectInsereTaskScope<TState = unknown, TEvent = unknown> {
     return this.applyTaskResult(parts, frameLoopStep(step), policy, "frame");
   }
 
+  /**
+   * @deprecated Use applyResult for Result-first code or applyUnsafe when
+   * exceptions are intentional.
+   */
   apply(
     item: DirectInsereTaskSpec<TState, TEvent>,
     policy?: InsereTaskPolicy
   ): boolean {
-    return applyDirectTask(this.#runtime, item, policy);
+    return this.applyUnsafe(item, policy);
+  }
+
+  applyUnsafe(
+    item: DirectInsereTaskSpec<TState, TEvent>,
+    policy?: InsereTaskPolicy
+  ): boolean {
+    return applyDirectTaskUnsafe(this.#runtime, item, policy);
   }
 
   applyResult(
@@ -583,13 +653,26 @@ export class DirectInsereTaskScope<TState = unknown, TEvent = unknown> {
     return applyDirectTaskResult(this.#runtime, item, policy);
   }
 
+  /**
+   * @deprecated Use applyTaskResult for Result-first code or applyTaskUnsafe
+   * when exceptions are intentional.
+   */
   applyTask(
     parts: string | readonly string[],
     step: DirectInsereStep<TState, TEvent>,
     policy?: InsereTaskPolicy,
     start?: DirectInsereTaskStart
   ): boolean {
-    return this.apply(this.task(parts, step, policy, start));
+    return this.applyTaskUnsafe(parts, step, policy, start);
+  }
+
+  applyTaskUnsafe(
+    parts: string | readonly string[],
+    step: DirectInsereStep<TState, TEvent>,
+    policy?: InsereTaskPolicy,
+    start?: DirectInsereTaskStart
+  ): boolean {
+    return this.applyUnsafe(this.task(parts, step, policy, start));
   }
 
   applyTaskResult(

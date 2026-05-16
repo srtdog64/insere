@@ -1,8 +1,9 @@
 # Insere Throw Boundaries
 
-Insere has both Result-returning APIs and throw-oriented convenience/runtime
-APIs. The goal is not to remove every `throw`; the goal is to make each throw
-boundary intentional and documented.
+Insere is Result-first at host-facing policy boundaries. Throw-oriented APIs
+exist only as unsafe compatibility/command wrappers or low-level runtime
+boundaries. New integration code should prefer Result APIs and use `Unsafe`
+names when exceptions are intentional.
 
 ## Result Boundaries
 
@@ -22,16 +23,33 @@ instead of throwing policy/runtime application failures:
 Expected host/domain failures should use these paths, `recover`, or explicit
 host events.
 
-## Intentional Throw Boundaries
+## Unsafe Compatibility Wrappers
+
+These APIs throw by design and should be treated as unsafe wrappers around the
+Result form:
+
+- `applyTaskUnsafe`
+- `applyDirectTaskUnsafe`
+- `InsereApi.applyDirectUnsafe`
+- `InsereApi.applyEffectUnsafe`
+- `InsereApi.waitFrameUnsafe`
+- `InsereApi.frameLoopUnsafe`
+- `InsereApiScope.applyDirectUnsafe`
+- `InsereApiScope.applyEffectUnsafe`
+- `InsereApiScope.waitFrameUnsafe`
+- `InsereApiScope.frameLoopUnsafe`
+
+The older boolean wrapper names remain for compatibility, but docs, examples,
+benchmarks, and new host code should not introduce new calls to those names.
+
+## Other Intentional Throw Boundaries
 
 Throws remain intentional in these cases:
 
-- boolean convenience APIs such as `applyTask`, `applyDirectTask`,
-  `api.applyDirect`, and `api.applyEffect`
 - low-level `DirectInsereTask` and `Insere` programmer errors, such as empty
   keys, duplicate `spawn`, invalid tick time, invalid sleep time, or invalid
   context access
-- cancellation injected into a running direct task or generator routine
+- explicit cancellation probes via `ctx.throwIfCancelled()`
 - generator `routine.throw(error)` propagation inside the effect runtime
 - explicit `bubble` supervision
 - explicit overflow policies configured as `"throw"`

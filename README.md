@@ -76,7 +76,7 @@ import {
 const api = createInsereApi();
 const editor = api.scope("editor");
 
-api.restartDirect("projection:scene", (ctx) => {
+api.applyDirectResult("projection:scene", (ctx) => {
   if (ctx.frame === 0) {
     ctx.waitFrame();
     return;
@@ -85,16 +85,16 @@ api.restartDirect("projection:scene", (ctx) => {
   // rebuild projection; task completes unless it waits again
 });
 
-api.waitFrame("drag:preview", () => {
+api.applyDirectResult("drag:preview", () => {
   // update preview on the next host tick
-});
+}, "restart", "frame");
 
-api.frameLoop("gameplay:systems", (ctx) => {
+api.frameLoopResult("gameplay:systems", (ctx) => {
   // run one system-level frame loop; return true to continue, false to stop
   return scene.isRunning;
 });
 
-editor.applyDirect("autosave", () => {
+editor.applyDirectResult("autosave", () => {
   // flush autosave once; skip policy avoids overlapping saves
 }, "skip", "frame");
 
@@ -124,14 +124,14 @@ const host = createInsereHostAdapter<unknown, AppEvent, HostEvent>({
   }
 });
 
-host.api.applyEffect("input:pointerup", function* (ctx) {
+host.api.applyEffectResult("input:pointerup", function* (ctx) {
   const event = yield* host.waitEvent(
     (item) => item.type === "pointerup"
   )(ctx);
   yield* dispatch<AppEvent>({ type: "commitPointer", event })(ctx);
 });
 
-host.api.applyDirect("entity:42:events", (ctx) => {
+host.api.applyDirectResult("entity:42:events", (ctx) => {
   const unsubscribe = host.subscribeTo(
     "entity:42",
     (event) => console.log("entity event", event),
@@ -144,7 +144,7 @@ host.api.applyDirect("entity:42:events", (ctx) => {
 
 host.emit({ type: "pointerup", x: 12, y: 20 });
 host.notifyTo("entity:42", { type: "damage", amount: 3 });
-host.api.applyEffect("entity:42:next-hit", function* (ctx) {
+host.api.applyEffectResult("entity:42:next-hit", function* (ctx) {
   const event = yield* host.waitUniqueBusEvent("entity:42")(ctx);
   ctx.dispatch({ type: "script:hit", event });
 });
@@ -173,6 +173,9 @@ yielded back to that host clock.
 - The API facade isolates uncaught task failures by default, reports them as
   `InsereResult` failures from `tick()` / `runIdle()`, and keeps explicit
   `bubble` supervision available for development rethrow behavior.
+- Result-returning APIs are the primary host boundary. Throwing command paths
+  use explicit `Unsafe` names, such as `applyDirectUnsafe`, when exceptions are
+  intentional.
 
 Effect helpers cover the small composition surface:
 
@@ -206,6 +209,10 @@ Effect helpers cover the small composition surface:
 Runtime state stays observable without taking ownership away from the host:
 `size`, `frame`, `now`, `has(key)`, `keys()`, and `snapshot()` report the
 scheduler state.
+
+Project policy is recorded in [`AGENT.md`](AGENT.md). It is part of the package
+contract for dogfood work: Result-first boundaries, explicit unsafe wrappers,
+structured bug logging, host-clock timing, and event-bus semantic splits.
 
 ## Fit
 

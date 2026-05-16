@@ -20,7 +20,7 @@ import { createInsereApi } from "@exornea/insere/api";
 const api = createInsereApi({ dispatch, getState });
 const editor = api.scope("editor");
 
-editor.applyDirect("preview", updatePreview, "restart", "frame");
+editor.applyDirectResult("preview", updatePreview, "restart", "frame");
 editor.applyEffectResult("autosave", autosaveEffect, "skip");
 
 api.tick(performance.now());
@@ -105,17 +105,20 @@ Policy meanings are shared:
 
 - `restart`: supersede existing work at the same key.
 - `spawn`: start only when the key is free; duplicate keys become `err(error)`
-  in Result APIs and throw in boolean APIs.
+  in Result APIs and throw only in explicit unsafe wrappers.
 - `skip`: start only when the key is free; active keys return
   `ok({ applied: false, status: "skipped" })`.
 
-Boolean methods exist for ergonomic command paths:
+Unsafe wrappers exist for command paths that intentionally want exceptions:
 
 ```ts
-api.applyDirect("drag:preview", step, "restart", "frame");
-api.frameLoop("gameplay:systems", step, "restart");
-api.applyEffect("autosave", effect, "skip");
+api.applyDirectUnsafe("drag:preview", step, "restart", "frame");
+api.frameLoopUnsafe("gameplay:systems", step, "restart");
+api.applyEffectUnsafe("autosave", effect, "skip");
 ```
+
+Compatibility boolean wrappers without the `Unsafe` suffix still exist, but new
+host adapters should use Result methods or the explicit `Unsafe` names.
 
 `frameLoop` step callbacks return `true` to continue on the next host frame and
 `false` to stop. This is intentionally stricter than a `void | boolean` shape:

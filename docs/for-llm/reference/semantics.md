@@ -10,7 +10,7 @@ import { createInsereApi } from "@exornea/insere/api";
 const api = createInsereApi({ dispatch });
 const editor = api.scope("editor");
 
-editor.applyDirect("preview", updatePreview, "restart", "frame");
+editor.applyDirectResult("preview", updatePreview, "restart", "frame");
 editor.applyEffectResult("autosave", autosaveEffect, "skip");
 api.tick(performance.now());
 ```
@@ -129,19 +129,19 @@ and forwards lifecycle operations to the runtime.
 Task application policy is explicit:
 
 ```ts
-applyTask(runtime, task("projection", projection, "restart"));
-applyTask(runtime, task("drag", dragLoop, "spawn"));
-applyTask(runtime, task("autosave", autosave, "skip"));
+applyTaskResult(runtime, task("projection", projection, "restart"));
+applyTaskResult(runtime, task("drag", dragLoop, "spawn"));
+applyTaskResult(runtime, task("autosave", autosave, "skip"));
 ```
 
 - `restart` cancels existing work at the same key and starts the new task.
 - `spawn` starts only when the key is unused and otherwise lets the runtime
   duplicate-key error surface.
-- `skip` starts only when the key is unused and returns `false` if work already
-  exists.
+- `skip` starts only when the key is unused and returns
+  `ok({ applied: false })` if work already exists.
 
-Use `applyTaskResult` when host adapters should receive policy decisions as
-values instead of exceptions:
+Use `applyTaskUnsafe` only when a command path intentionally wants exceptions.
+Host adapters should receive policy decisions as values:
 
 ```ts
 const result = applyTaskResult(runtime, task("autosave", autosave, "skip"));
@@ -222,14 +222,14 @@ Direct task specs and scopes mirror the generator task policy layer:
 ```ts
 const editor = new DirectInsereTaskScope(runtime).child("editor");
 
-editor.applyTask("autosave", flushAutosave, "skip", "frame");
-editor.apply(editor.frameTask("preview", updatePreview, "restart"));
+editor.applyTaskResult("autosave", flushAutosave, "skip", "frame");
+editor.applyResult(editor.frameTask("preview", updatePreview, "restart"));
 editor.cancelScope("preview");
 ```
 
 The policy meanings are the same as effect tasks: `restart` supersedes,
-`spawn` requires a free key, and `skip` returns `false` when the key is already
-active.
+`spawn` requires a free key, and `skip` returns `ok({ applied: false })` when
+the key is already active.
 
 Direct task application has the same Result form through
 `applyDirectTaskResult`, `scope.applyResult`, and `scope.applyTaskResult`.

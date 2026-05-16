@@ -79,6 +79,7 @@
     "dist",
     "docs",
     "benchmark",
+    "AGENT.md",
     "CHANGELOG.md",
     "README.md",
     "LICENSE"

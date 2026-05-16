@@ -204,10 +204,10 @@ const api = createInsereApi({
   requestId: () => host.currentRequestId
 });
 
-api.restartDirect("projection:scene", rebuildProjection);
-api.waitFrame("preview:drag", updatePreview);
-api.frameLoop("gameplay:systems", runGameplaySystems);
-api.applyEffect("autosave", autosaveEffect, "skip");
+api.applyDirectResult("projection:scene", rebuildProjection, "restart");
+api.applyDirectResult("preview:drag", updatePreview, "restart", "frame");
+api.frameLoopResult("gameplay:systems", runGameplaySystems);
+api.applyEffectResult("autosave", autosaveEffect, "skip");
 api.tick(performance.now());
 ```
 

@@ -38,11 +38,11 @@ const host = createInsereHostAdapter({
   }
 });
 
-host.api.waitFrame("preview:drag", (ctx) => {
+host.api.applyDirectResult("preview:drag", (ctx) => {
   ctx.dispatch({ type: "previewFrame", dt: ctx.delta });
-});
+}, "restart", "frame");
 
-host.api.applyEffect("input:pointerup", function* (ctx) {
+host.api.applyEffectResult("input:pointerup", function* (ctx) {
   const event = yield* host.waitEvent(
     (item) => item.type === "pointerup"
   )(ctx);
@@ -97,7 +97,7 @@ Use `InsereEventBus` when inbound events have a stable target key, such as
 avoids scanning every predicate waiter for targeted script events:
 
 ```ts
-host.api.applyEffect("entity:42:script:event", function* (ctx) {
+host.api.applyEffectResult("entity:42:script:event", function* (ctx) {
   const event = yield* host.waitBusEvent("entity:42")(ctx);
   ctx.dispatch({ type: "scriptEvent", event });
 });
@@ -109,7 +109,7 @@ For hot continuous script events, use direct subscriptions instead of Promise
 waits:
 
 ```ts
-host.api.applyDirect("entity:42:script:events", (ctx) => {
+host.api.applyDirectResult("entity:42:script:events", (ctx) => {
   const unsubscribe = host.eventBus.subscribe(
     "entity:42",
     (event) => runScript(event),
@@ -150,7 +150,7 @@ where one system owns many entities. The loop starts on the next host tick.
 Return `true` to continue on the next frame and `false` to stop.
 
 ```ts
-host.api.frameLoop("gameplay:systems", (ctx) => {
+host.api.frameLoopResult("gameplay:systems", (ctx) => {
   for (const entity of activeEntities) {
     runGameplay(entity, ctx.delta);
   }
@@ -207,7 +207,7 @@ const loadAsset = abortable((signal) =>
   fetch(url, { signal }).then((response) => response.arrayBuffer())
 );
 
-api.applyEffect("asset:load:tree", loadAsset, "restart");
+api.applyEffectResult("asset:load:tree", loadAsset, "restart");
 ```
 
 For APIs that do not accept `AbortSignal`, keep the task key guarded by
