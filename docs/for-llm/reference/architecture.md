@@ -8,6 +8,12 @@ threads, run worker pools, or hide background scheduling. The host owns the
 clock and execution environment; Insere only coordinates keyed work that
 cooperatively yields through frame, delay, idle, or Promise-bridge waits.
 
+The scheduler's atomicity model is single-threaded and slot-oriented. It does
+not use locks or atomics internally. The important edge is reentrancy during
+host calls such as `tick()`: old keyed work may call back into `restart`,
+`cancel`, or `cancelGroup`, but it must not resurrect itself or overwrite a
+newer keyed occupant. See [`atomicity.md`](atomicity.md).
+
 It intentionally sits below `async` / `await` for frame-sensitive work:
 
 ```txt
@@ -99,6 +105,7 @@ composition and typed effect helpers matter more than raw scheduling cost.
 - no worker pool
 - no preemptive threading
 - no CPU parallelism
+- no shared-memory or lock-based coordination
 - no general job queue
 - no hidden retry or scheduling policy; task policy is explicit at application
   boundaries

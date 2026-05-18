@@ -37,6 +37,34 @@ describe("Insere", () => {
     expect(events).toEqual(["new"]);
   });
 
+  it("keeps reentrant self-restart atomic against the previous routine yield", () => {
+    const events: string[] = [];
+    const insere = new Insere();
+
+    insere.restart("projection", function* () {
+      events.push("old");
+      insere.restart("projection", function* () {
+        events.push("new:start");
+        yield frame();
+        events.push("new:frame");
+      });
+
+      yield delay(1000);
+      events.push("old:after");
+    });
+
+    expect(events).toEqual(["old", "new:start"]);
+    expect(insere.keys()).toEqual(["projection"]);
+
+    insere.tick(1);
+
+    expect(events).toEqual(["old", "new:start", "new:frame"]);
+    expect(insere.size).toBe(0);
+
+    insere.tick(1000);
+    expect(events).toEqual(["old", "new:start", "new:frame"]);
+  });
+
   it("runs prior finalizer before the new routine starts on restart", () => {
     const events: string[] = [];
     const insere = new Insere({ dispatch: (event: string) => events.push(event) });

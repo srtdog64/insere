@@ -166,6 +166,18 @@ export class Insere<TState = unknown, TEvent = unknown> {
       return;
     }
 
+    if (previous === this.#activeEntry) {
+      previous.aborted = true;
+      previous.controller?.abort();
+      this.#deleteEntry(key);
+      this.#runFinalizers(previous);
+
+      const entry = this.#createEntry(key, factory);
+      this.#setEntry(entry);
+      this.#resume(entry);
+      return;
+    }
+
     previous.aborted = true;
     previous.controller?.abort();
     this.#runFinalizers(previous);
@@ -398,6 +410,10 @@ export class Insere<TState = unknown, TEvent = unknown> {
       const result = entry.routine.next(value);
       this.#activeEntry = undefined;
 
+      if (entry.aborted || this.#entries.get(entry.key) !== entry) {
+        return;
+      }
+
       if (result.done) {
         this.#deleteEntry(entry.key);
         return;
@@ -422,6 +438,10 @@ export class Insere<TState = unknown, TEvent = unknown> {
     try {
       const result = entry.routine.throw(error);
       this.#activeEntry = undefined;
+
+      if (entry.aborted || this.#entries.get(entry.key) !== entry) {
+        return;
+      }
 
       if (result.done) {
         this.#deleteEntry(entry.key);

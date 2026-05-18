@@ -240,6 +240,36 @@ describe("DirectInsereTask", () => {
     expect(runtime.size).toBe(0);
   });
 
+  it("keeps reentrant self-restart atomic against the previous direct step", () => {
+    const events: string[] = [];
+    const runtime = new DirectInsereTask();
+
+    runtime.restart("projection", (ctx) => {
+      events.push("old");
+      runtime.restart("projection", (nextCtx) => {
+        events.push(`new:${nextCtx.frame}`);
+        if (nextCtx.frame === 0) {
+          nextCtx.waitFrame();
+          return;
+        }
+
+        nextCtx.complete();
+      });
+
+      expect(() => ctx.waitFrame()).toThrow(
+        "DirectInsereTask context is only valid while a task is running."
+      );
+    });
+
+    expect(events).toEqual(["old", "new:0"]);
+    expect(runtime.keys()).toEqual(["projection"]);
+
+    runtime.tick(1);
+
+    expect(events).toEqual(["old", "new:0", "new:1"]);
+    expect(runtime.size).toBe(0);
+  });
+
   it("runs multiple direct finalizers in reverse registration order", () => {
     const events: string[] = [];
     const runtime = new DirectInsereTask();

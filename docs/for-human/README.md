@@ -76,6 +76,9 @@ api.applyEffectResult(
 
 - The host owns time and calls `tick(now)`.
 - Insere owns keyed slots and cancellation.
+- Insere is single-threaded; worker pools and CPU parallelism stay in the host.
+- The real concurrency risk is reentrancy during `tick()`, so old work must not
+  resurrect or overwrite a newer keyed occupant.
 - `restart` replaces active work for the same key.
 - `skip` prevents overlapping work.
 - `cancelGroup("asset:")` cancels all matching keyed work.
@@ -107,6 +110,8 @@ npm publish --access public --otp=<code>
 
 - LLM/deep reference: [`../for-llm/README.md`](../for-llm/README.md)
 - API facade: [`../for-llm/reference/api.md`](../for-llm/reference/api.md)
+- Scheduler atomicity:
+  [`../for-llm/reference/atomicity.md`](../for-llm/reference/atomicity.md)
 - Performance: [`../for-llm/reference/performance.md`](../for-llm/reference/performance.md)
 - Stability and release gates:
   [`../for-llm/reference/stability.md`](../for-llm/reference/stability.md)

@@ -159,6 +159,9 @@ owns threads, CPU parallelism, I/O execution, or background work. The host owns
 the clock and calls `tick(now)`; Insere only advances work that has explicitly
 yielded back to that host clock.
 
+- The scheduler is single-threaded. The concurrency contract is reentrancy, not
+  locks: a running task may call `restart`, `cancel`, or `cancelGroup`, and old
+  work must not resurrect or overwrite a newer keyed occupant.
 - A direct task is a keyed callback over the host clock.
 - A routine is a generator.
 - A routine yields scheduling instructions.

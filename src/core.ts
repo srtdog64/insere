@@ -143,6 +143,15 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
 
     this.#cancelEntry(previous);
 
+    if (previous === this.#activeEntry) {
+      this.#deleteEntry(previous);
+      this.#runFinalizers(previous);
+      const entry = this.#createEntry(key, step);
+      this.#setEntry(entry);
+      this.#run(entry);
+      return;
+    }
+
     if (previous.finalizers) {
       this.#deleteEntry(previous);
       this.#runFinalizers(previous);
@@ -548,6 +557,10 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
     try {
       entry.step(this.#context);
       this.#activeEntry = undefined;
+
+      if (entry.aborted || this.#entries.get(entry.key) !== entry) {
+        return;
+      }
 
       if (deleteOnDone && entry.wait === "done") {
         this.#deleteEntry(entry);

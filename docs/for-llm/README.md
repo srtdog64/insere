@@ -119,6 +119,12 @@ for the first failure unless an explicit `bubble` policy rethrows.
 Host-provided supervision callbacks are also isolated under non-`bubble`
 policies and logged as bug records if they throw.
 
+Scheduler atomicity is single-threaded and slot-oriented. Insere does not own
+worker threads, shared memory, atomics, or CPU parallelism. Reentrancy is the
+important edge: a task may call `restart`, `cancel`, or `cancelGroup` while
+`tick()` is running, and the old keyed occupant must not resurrect or overwrite
+the newer occupant. See [`reference/atomicity.md`](reference/atomicity.md).
+
 Keep policy names and meanings consistent between direct tasks, effects,
 scopes, API facade, and host adapter.
 

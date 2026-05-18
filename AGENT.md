@@ -1,5 +1,15 @@
 # AGENT.md (AI Development Rules)
 
+Scheduler atomicity rule: Insere is a single-threaded host-cooperative
+scheduler. It must not introduce internal worker threads, shared-memory
+coordination, locks, or atomics. Reentrancy is allowed and must be tested: a
+running task may call `restart`, `cancel`, `cancelGroup`, or `cancelAll`
+through captured host APIs. Slot safety is mandatory: once a key is cancelled
+or superseded, the old occupant must not resurrect itself, delete the
+replacement, or overwrite the replacement's wait state. Worker-thread
+integration belongs in host adapters and must cross the boundary with request
+identity, stale-result guards, and `Result` payloads.
+
 이 문서는 프로젝트의 **"추론 불확실성(Reasoning Uncertainty)"**을 제거하고, 복잡성이 증가하더라도 시스템의 예측 가능성을 유지하기 위한 핵심 원칙을 정의합니다. 모든 개발 및 AI 에이전트 활동은 이 정책을 엄격히 준수해야 합니다.
 
 This document defines the core principles to eliminate **"Reasoning Uncertainty"** and maintain system predictability as complexity increases. All development and AI agent activities must strictly adhere to these policies.
