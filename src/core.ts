@@ -558,7 +558,7 @@ export class DirectInsereTask<TState = unknown, TEvent = unknown> {
       entry.step(this.#context);
       this.#activeEntry = undefined;
 
-      if (entry.aborted || this.#entries.get(entry.key) !== entry) {
+      if (entry.aborted || entry.index < 0) {
         return;
       }
 

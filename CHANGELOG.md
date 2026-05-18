@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- Preserved scheduler slot atomicity during reentrant self-restart.
+  - Direct tasks that restart their own key can no longer let the previous step
+    delete or overwrite the replacement entry after returning.
+  - Generator routines that restart their own key can no longer let a stale
+    yielded instruction overwrite the replacement routine's wait state.
+
+### Added
+
+- Documented Insere's single-threaded scheduler atomicity contract.
+  - Worker pools, shared memory, locks, and CPU parallelism remain host-adapter
+    responsibilities.
+  - Reentrancy during `tick()` is the explicit concurrency edge to preserve.
+
 ## 0.2.0
 
 Insere `0.2.0` tightens the package around its intended role: a small

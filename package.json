@@ -1,6 +1,6 @@
 {
   "name": "@exornea/insere",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A small cooperative scheduler for keyed, cancellable TypeScript editor workloads.",
   "license": "MIT",
   "type": "module",

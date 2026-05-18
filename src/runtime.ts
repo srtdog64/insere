@@ -410,7 +410,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       const result = entry.routine.next(value);
       this.#activeEntry = undefined;
 
-      if (entry.aborted || this.#entries.get(entry.key) !== entry) {
+      if (entry.aborted || entry.index < 0) {
         return;
       }
 
@@ -439,7 +439,7 @@ export class Insere<TState = unknown, TEvent = unknown> {
       const result = entry.routine.throw(error);
       this.#activeEntry = undefined;
 
-      if (entry.aborted || this.#entries.get(entry.key) !== entry) {
+      if (entry.aborted || entry.index < 0) {
         return;
       }
 
