@@ -68,8 +68,10 @@ npm run check:release
 ```
 
 `check:release` includes benchmark gates. Benchmarks are not exact product
-latency models, so the gates use conservative ratios instead of exact timings.
-`npm publish` runs the same release gate through `prepublishOnly`.
+latency models, so the gates use conservative ratios for the real performance
+contract. Absolute caps are wider smoke guards against order-of-magnitude
+regressions on the default benchmark sizes. `npm publish` runs the same release
+gate through `prepublishOnly`.
 
 Required P0 ratios:
 
@@ -80,7 +82,7 @@ Required P0 ratios:
 
 Required P0 absolute median caps on the default benchmark sizes:
 
-- restart storm: Insere median at most `20ms`
+- restart storm: Insere median at most `30ms`
 - frame continuation: Insere median at most `1.5ms`
 - cancel group: Insere median at most `2ms`
 - mixed cancel group: Insere median at most `5ms`

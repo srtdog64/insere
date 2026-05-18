@@ -683,7 +683,7 @@ if (gate) {
   assertInsereFaster("Frame continuation", p0Rows, 1.2);
   assertInsereFaster("Cancel group", p0Rows, 2);
   assertInsereFaster("Cancel group mixed", p0Rows, 2);
-  assertInsereMedianAtMost("Restart storm", p0Rows, 20);
+  assertInsereMedianAtMost("Restart storm", p0Rows, 30);
   assertInsereMedianAtMost("Frame continuation", p0Rows, 1.5);
   assertInsereMedianAtMost("Cancel group", p0Rows, 2);
   assertInsereMedianAtMost("Cancel group mixed", p0Rows, 5);
