@@ -238,7 +238,7 @@ Poor fits:
 
 ## Status
 
-Version `0.2.0` is a public pre-release. The core scheduler, API facade,
+Version `0.2.3` is a public pre-release. The core scheduler, API facade,
 logging, supervision, mailbox, and benchmark gates are usable, but the API
 should still be treated as experimental until real host dogfood stabilizes it.
 
@@ -254,4 +254,6 @@ Detailed reference docs live under
 Run `npm run check` for the standard build, test typecheck, test,
 export-smoke, and pack gate.
 Run `npm run verify:geukbit` for the Geukbit scale stress and benchmark gate,
-or `npm run check:release` before cutting a release candidate.
+or `npm run check:release` before cutting a release candidate. Release checks
+also run `npm run benchmark:restart:gate` as sustained observation for restart
+storm regressions.

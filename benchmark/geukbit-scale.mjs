@@ -77,7 +77,15 @@ function toMeasurement(name, units, samples) {
   const unitsPerSecond = units / (bestMs / 1_000);
   const gateUnitsPerSecond = units / (medianMs / 1_000);
 
-  return { name, units, bestMs, medianMs, unitsPerSecond, gateUnitsPerSecond };
+  return {
+    name,
+    units,
+    bestMs,
+    medianMs,
+    samples,
+    unitsPerSecond,
+    gateUnitsPerSecond
+  };
 }
 
 function median(samples) {
@@ -460,8 +468,8 @@ console.log("");
 console.log(`Node: ${process.version}`);
 console.log(`Repeats: ${repeats} (best of ${repeats - 1} after warmup)`);
 console.log("");
-console.log("| Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Faster side |");
-console.log("| --- | --- | --- | ---: | ---: | ---: | ---: |");
+console.log("| Scenario | Baseline | Insere | Baseline units/s | Insere units/s | Insere best ms | Insere median ms | Faster side |");
+console.log("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |");
 
 for (const row of rows) {
   console.log(
@@ -469,6 +477,7 @@ for (const row of rows) {
       `${formatNumber(row.baseline.unitsPerSecond)} | ` +
       `${formatNumber(row.insere.unitsPerSecond)} | ` +
       `${formatNumber(row.insere.bestMs)} | ` +
+      `${formatNumber(row.insere.medianMs)} | ` +
       `${fasterSide(row.insere, row.baseline)} |`
   );
 }
@@ -498,7 +507,8 @@ function assertInsereFaster(scenario, minRatio) {
 
   if (ratio < minRatio) {
     throw new Error(
-      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.`
+      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x, expected >= ${minRatio}x.\n` +
+      describeBenchmarkRow(row)
     );
   }
 }
@@ -514,7 +524,8 @@ function assertNotSlowerThan(scenario, minRatio) {
 
   if (ratio < minRatio) {
     throw new Error(
-      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x baseline, expected >= ${minRatio}x.`
+      `${scenario} median gate failed: Insere ${formatNumber(ratio)}x baseline, expected >= ${minRatio}x.\n` +
+      describeBenchmarkRow(row)
     );
   }
 }
@@ -528,7 +539,21 @@ function assertInsereMedianAtMost(scenario, maxMs) {
 
   if (row.insere.medianMs > maxMs) {
     throw new Error(
-      `${scenario} absolute gate failed: Insere median ${formatNumber(row.insere.medianMs)}ms, expected <= ${maxMs}ms.`
+      `${scenario} absolute gate failed: Insere median ${formatNumber(row.insere.medianMs)}ms, expected <= ${maxMs}ms.\n` +
+      describeBenchmarkRow(row)
     );
   }
+}
+
+function describeBenchmarkRow(row) {
+  return [
+    `baseline samples ms: ${formatSamples(row.baseline.samples)}`,
+    `insere samples ms: ${formatSamples(row.insere.samples)}`,
+    `baseline median ms: ${formatNumber(row.baseline.medianMs)}`,
+    `insere median ms: ${formatNumber(row.insere.medianMs)}`
+  ].join("\n");
+}
+
+function formatSamples(samples) {
+  return `[${samples.map((sample) => formatNumber(sample)).join(", ")}]`;
 }

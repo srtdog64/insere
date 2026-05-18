@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3
+
+### Added
+
+- Added benchmark observability for release gates.
+  - Benchmark tables now show Insere median time in addition to best time.
+  - Gate failures now include raw baseline and Insere sample timings.
+  - Added `benchmark:restart` and `benchmark:restart:gate` for restart storm
+    sustained-regression watch using median and p75 checks.
+
 ## 0.2.2
 
 ### Fixed

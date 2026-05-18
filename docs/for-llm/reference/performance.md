@@ -15,6 +15,8 @@ restartable, and tied to a host clock.
 ```sh
 npm run benchmark
 npm run benchmark:gate
+npm run benchmark:restart
+npm run benchmark:restart:gate
 npm run benchmark:geukbit
 npm run benchmark:geukbit:gate
 ```
@@ -32,10 +34,15 @@ That runs the standard package gate plus the Geukbit scale stress and benchmark
 gate. Use `npm run check` for normal local validation when the full benchmark
 gate is not needed.
 
-The non-gate benchmark scripts print tables only. Tables report best samples.
-The `*:gate` scripts fail the process when conservative median-sample release
-ratios or absolute median caps are missed. See [`stability.md`](stability.md)
-for the current gate thresholds.
+The non-gate benchmark scripts print tables only. Tables report best and median
+samples. The `*:gate` scripts fail the process when conservative median-sample
+release ratios or absolute median caps are missed. Gate failures include raw
+baseline and Insere sample timings so investigations can separate one-off host
+noise from sustained regressions. See [`stability.md`](stability.md) for the
+current gate thresholds.
+
+Use `npm run benchmark:restart` for restart storm sustained observation. It
+prints median, p75, p90, and raw samples for the keyed supersession hot path.
 
 Default workloads:
 

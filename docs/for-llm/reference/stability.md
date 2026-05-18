@@ -1,6 +1,6 @@
 # Insere Stability
 
-Insere `0.2.0` is a public pre-release. The package is usable for dogfood, but
+Insere `0.2.3` is a public pre-release. The package is usable for dogfood, but
 the API is not declared stable yet.
 
 ## Package Boundary
@@ -73,6 +73,12 @@ contract. Absolute caps are wider smoke guards against order-of-magnitude
 regressions on the default benchmark sizes. `npm publish` runs the same release
 gate through `prepublishOnly`.
 
+Performance is under continuous observation. A single slow sample is not a
+release failure by itself, but a sustained slowdown across median or p75 samples
+is treated as a regression until explained. Gate failures print raw sample
+timings so the next investigation can distinguish one-off host noise from a
+repeatable runtime change.
+
 Required P0 ratios:
 
 - restart storm: Insere at least `2x` faster than Promise+Map+Abort
@@ -86,6 +92,13 @@ Required P0 absolute median caps on the default benchmark sizes:
 - frame continuation: Insere median at most `1.5ms`
 - cancel group: Insere median at most `2ms`
 - mixed cancel group: Insere median at most `5ms`
+
+Additional sustained-observation gate:
+
+- `npm run benchmark:restart:gate`
+- restart storm median ratio: Insere at least `2x` faster
+- restart storm Insere median: at most `30ms`
+- restart storm Insere p75: at most `40ms`
 
 Required Geukbit-scale ratios:
 

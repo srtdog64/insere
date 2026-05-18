@@ -97,7 +97,8 @@ npm run check:release
 ```
 
 That runs build, test typecheck, tests, export smoke, pack dry-run, P0
-benchmark gates, and Geukbit-scale stress/benchmark gates.
+benchmark gates, restart-storm sustained observation, and Geukbit-scale
+stress/benchmark gates.
 
 Before publishing:
 
